@@ -43,8 +43,9 @@ func TestHandleMCPGetConnectionSummary(t *testing.T) {
 		t.Errorf("Expected total_attempts in result")
 	}
 
-	if _, ok := result["avg_latency_ms"]; !ok {
-		t.Errorf("Expected avg_latency_ms in result")
+	// Verify that we no longer return misleading latency metrics
+	if _, ok := result["avg_latency_ms"]; ok {
+		t.Errorf("Should not return avg_latency_ms - this was a misleading metric")
 	}
 }
 
@@ -82,8 +83,9 @@ func TestHandleMCPGetConnectionSummaryByCommand(t *testing.T) {
 		t.Errorf("Expected total_attempts in result")
 	}
 
-	if _, ok := result["avg_latency_ms"]; !ok {
-		t.Errorf("Expected avg_latency_ms in result")
+	// Verify that we no longer return misleading latency metrics
+	if _, ok := result["avg_latency_ms"]; ok {
+		t.Errorf("Should not return avg_latency_ms - this was a misleading metric")
 	}
 }
 

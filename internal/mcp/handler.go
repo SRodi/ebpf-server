@@ -20,29 +20,25 @@ func HandleMCP(w http.ResponseWriter, r *http.Request) {
 
     switch req.Method {
     case "get_connection_summary":
-        var p GetConnectionSummaryRequest
+        var p GetConnectionSummaryParams
         if err := json.Unmarshal(req.Params, &p); err != nil {
-            http.Error(w, "invalid parameters", http.StatusBadRequest)
+            http.Error(w, "invalid params", http.StatusBadRequest)
             return
         }
         
-        // Get real data from eBPF - support both PID and command name
         var total int
-        var avgLatency float64
-        
         if p.Command != "" {
-            total, avgLatency = bpf.GetConnectionSummary(0, p.Command, p.Seconds)
-            logger.Debugf("Connection summary for command '%s': %d connections, %.2f ms avg latency", 
-                      p.Command, total, avgLatency)
+            total = bpf.GetConnectionSummary(0, p.Command, p.Seconds)
+            logger.Debugf("Connection summary for command '%s': %d attempts in %d seconds", 
+                      p.Command, total, p.Seconds)
         } else {
-            total, avgLatency = bpf.GetConnectionSummary(uint32(p.PID), "", p.Seconds)
-            logger.Debugf("Connection summary for PID %d: %d connections, %.2f ms avg latency", 
-                      p.PID, total, avgLatency)
+            total = bpf.GetConnectionSummary(uint32(p.PID), "", p.Seconds)
+            logger.Debugf("Connection summary for PID %d: %d attempts in %d seconds", 
+                      p.PID, total, p.Seconds)
         }
         
         resp := GetConnectionSummaryResponse{
-            Total:   total,
-            Average: avgLatency,
+            Total: total,
         }
         
         w.Header().Set("Content-Type", "application/json")

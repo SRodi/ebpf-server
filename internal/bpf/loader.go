@@ -165,7 +165,8 @@ func processEvents() {
 }
 
 // GetConnectionSummary returns connection statistics for a given PID or command and duration
-func GetConnectionSummary(pid uint32, command string, durationSeconds int) (int, float64) {
+// Returns count of connection attempts in the specified time window
+func GetConnectionSummary(pid uint32, command string, durationSeconds int) int {
     connectionsMu.RLock()
     defer connectionsMu.RUnlock()
 
@@ -183,7 +184,7 @@ func GetConnectionSummary(pid uint32, command string, durationSeconds int) (int,
     
     // If no events exist, return empty
     if newestTimestamp == 0 {
-        return 0, 0.0
+        return 0
     }
     
     // Calculate cutoff based on duration from the newest event
@@ -210,7 +211,7 @@ func GetConnectionSummary(pid uint32, command string, durationSeconds int) (int,
         // Search by PID (original behavior)
         events, exists := connections[pid]
         if !exists {
-            return 0, 0.0
+            return 0
         }
 
         for _, event := range events {
@@ -221,38 +222,11 @@ func GetConnectionSummary(pid uint32, command string, durationSeconds int) (int,
     }
 
     if len(recentEvents) == 0 {
-        return 0, 0.0
+        return 0
     }
 
-    // Calculate average latency as the average time between connection attempts within the same PID
-    // This gives a more meaningful metric than comparing across different processes
-    var totalLatency float64
-    var latencyCount int
-    
-    // Group events by PID
-    pidEvents := make(map[uint32][]Event)
-    for _, event := range recentEvents {
-        pidEvents[event.PID] = append(pidEvents[event.PID], event)
-    }
-    
-    // Calculate latency within each PID's events
-    for _, events := range pidEvents {
-        if len(events) > 1 {
-            // Sort events by timestamp (they should already be in order)
-            for i := 1; i < len(events); i++ {
-                latency := float64(events[i].TS-events[i-1].TS) / 1e6 // Convert to milliseconds
-                totalLatency += latency
-                latencyCount++
-            }
-        }
-    }
-
-    avgLatency := 0.0
-    if latencyCount > 0 {
-        avgLatency = totalLatency / float64(latencyCount)
-    }
-
-    return len(recentEvents), avgLatency
+    // Return the count of connection attempts in the time window
+    return len(recentEvents)
 }
 
 // GetAllConnections returns all tracked connections (for debugging)

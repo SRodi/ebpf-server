@@ -103,7 +103,9 @@ The server exposes the following MCP-compatible endpoint:
 
 #### get_connection_summary
 
-Get connection statistics for a specific process over a time period. You can query by either PID or command name.
+Get connection attempt statistics for a specific process over a time period. You can query by either PID or command name.
+
+**Important**: This tool captures `connect()` syscall attempts, not actual network latency. It counts how many times a process attempted to establish connections, which is useful for monitoring application behavior and connection patterns.
 
 Request format (by PID):
 ```json
@@ -131,8 +133,7 @@ Response format:
 ```json
 {
   "result": {
-    "total_attempts": 15,
-    "avg_latency_ms": 23.4
+    "total_attempts": 15
   }
 }
 ```
@@ -409,22 +410,6 @@ make dev-setup
 └── README.md             # This file
 ```
 
-## Docker Support
-
-### Build Docker Image
-
-```bash
-make docker-build
-```
-
-### Run in Docker
-
-```bash
-make docker-run
-```
-
-Note: Running eBPF programs in Docker requires privileged mode and may have limitations depending on the host kernel.
-
 ## Troubleshooting
 
 ### Common Issues
@@ -447,7 +432,7 @@ Note: Running eBPF programs in Docker requires privileged mode and may have limi
 Run with debug symbols and verbose logging for detailed troubleshooting:
 ```bash
 make build-dev
-sudo ./bin/mcp-server-dev
+sudo ./bin/mcp-ebpf-dev
 ```
 
 Debug builds include detailed logging of:
