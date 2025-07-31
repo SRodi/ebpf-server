@@ -7,6 +7,7 @@ char LICENSE[] SEC("license") = "GPL";
 
 // Network constants (since they might not be in vmlinux.h)
 #define AF_INET 2
+#define AF_INET6 10
 #define SOCK_STREAM 1
 #define SOCK_DGRAM 2
 #define IPPROTO_TCP 6
@@ -27,12 +28,27 @@ struct sockaddr_in {
     char sin_zero[8];
 };
 
+struct sockaddr_in6 {
+    unsigned short sin6_family;
+    unsigned short sin6_port;
+    unsigned int sin6_flowinfo;
+    struct {
+        union {
+            unsigned char s6_addr[16];
+            unsigned short s6_addr16[8];
+            unsigned int s6_addr32[4];
+        };
+    } sin6_addr;
+    unsigned int sin6_scope_id;
+};
+
 struct event_t {
     u32 pid;
     u64 ts;
     u32 ret;  // Changed from int to u32 for better alignment
     char comm[16];
-    u32 dest_ip;   // Destination IP address (IPv4)
+    u32 dest_ip;   // IPv4 address (0 if IPv6)
+    u8 dest_ip6[16]; // IPv6 address (all zeros if IPv4)
     u16 dest_port; // Destination port
     u16 family;    // Address family (AF_INET, AF_INET6)
     u8 protocol;   // Protocol (IPPROTO_TCP, IPPROTO_UDP)
@@ -60,10 +76,15 @@ int trace_connect(struct trace_event_raw_sys_enter *ctx) {
     // ctx->args[1] = struct sockaddr *addr
     // ctx->args[2] = socklen_t addrlen
     
-    // Initialize protocol fields
+    // Initialize all fields
     e->protocol = 0;
     e->sock_type = 0;
     e->padding = 0;
+    e->dest_ip = 0;
+    #pragma unroll
+    for (int i = 0; i < 16; i++) {
+        e->dest_ip6[i] = 0;
+    }
     
     // Try to determine protocol from socket - this is tricky in eBPF
     // We'll use a heuristic based on the destination port for common protocols
@@ -101,9 +122,72 @@ int trace_connect(struct trace_event_raw_sys_enter *ctx) {
                         e->sock_type = SOCK_STREAM;
                     }
                 }
+            } else if (family == AF_INET6) {
+                struct sockaddr_in6 *addr_in6 = (struct sockaddr_in6 *)addr;
+                // Copy IPv6 address
+                if (bpf_probe_read_user(&e->dest_ip6, sizeof(e->dest_ip6), &addr_in6->sin6_addr.s6_addr) != 0) {
+                    // Clear IPv6 address on failure
+                    #pragma unroll
+                    for (int i = 0; i < 16; i++) {
+                        e->dest_ip6[i] = 0;
+                    }
+                }
+                if (bpf_probe_read_user(&e->dest_port, sizeof(e->dest_port), &addr_in6->sin6_port) != 0) {
+                    e->dest_port = 0;
+                } else {
+                    e->dest_port = __builtin_bswap16(e->dest_port); // Convert from network to host byte order
+                    
+                    // Same protocol detection logic for IPv6
+                    if (e->dest_port == 80 || e->dest_port == 443 || e->dest_port == 22 || 
+                        e->dest_port == 21 || e->dest_port == 25 || e->dest_port == 993 || 
+                        e->dest_port == 995 || e->dest_port == 587 || e->dest_port == 143 ||
+                        e->dest_port == 110 || e->dest_port == 3306 || e->dest_port == 5432) {
+                        e->protocol = IPPROTO_TCP;
+                        e->sock_type = SOCK_STREAM;
+                    } else if (e->dest_port == 53 || e->dest_port == 67 || e->dest_port == 68 ||
+                               e->dest_port == 123 || e->dest_port == 161 || e->dest_port == 162) {
+                        e->protocol = IPPROTO_UDP;
+                        e->sock_type = SOCK_DGRAM;
+                    } else {
+                        // Default assumption: most connect() calls are TCP
+                        e->protocol = IPPROTO_TCP;
+                        e->sock_type = SOCK_STREAM;
+                    }
+                }
+            } else if (family == AF_INET6) {
+                struct sockaddr_in6 *addr_in6 = (struct sockaddr_in6 *)addr;
+                // Copy IPv6 address
+                if (bpf_probe_read_user(&e->dest_ip6, sizeof(e->dest_ip6), &addr_in6->sin6_addr.s6_addr) != 0) {
+                    // Clear IPv6 address on failure
+                    #pragma unroll
+                    for (int i = 0; i < 16; i++) {
+                        e->dest_ip6[i] = 0;
+                    }
+                }
+                if (bpf_probe_read_user(&e->dest_port, sizeof(e->dest_port), &addr_in6->sin6_port) != 0) {
+                    e->dest_port = 0;
+                } else {
+                    e->dest_port = __builtin_bswap16(e->dest_port); // Convert from network to host byte order
+                    
+                    // Same protocol detection logic for IPv6
+                    if (e->dest_port == 80 || e->dest_port == 443 || e->dest_port == 22 || 
+                        e->dest_port == 21 || e->dest_port == 25 || e->dest_port == 993 || 
+                        e->dest_port == 995 || e->dest_port == 587 || e->dest_port == 143 ||
+                        e->dest_port == 110 || e->dest_port == 3306 || e->dest_port == 5432) {
+                        e->protocol = IPPROTO_TCP;
+                        e->sock_type = SOCK_STREAM;
+                    } else if (e->dest_port == 53 || e->dest_port == 67 || e->dest_port == 68 ||
+                               e->dest_port == 123 || e->dest_port == 161 || e->dest_port == 162) {
+                        e->protocol = IPPROTO_UDP;
+                        e->sock_type = SOCK_DGRAM;
+                    } else {
+                        // Default assumption: most connect() calls are TCP
+                        e->protocol = IPPROTO_TCP;
+                        e->sock_type = SOCK_STREAM;
+                    }
+                }
             } else {
-                e->dest_ip = 0;
-                e->dest_port = 0;
+                // Unknown address family - already cleared above
             }
         } else {
             e->family = 0;

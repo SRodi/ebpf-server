@@ -79,6 +79,17 @@ func Fatalf(format string, v ...interface{}) {
 	defaultLogger.logger.Fatalf(format, v...)
 }
 
+// Error logs an error message
+func Error(v ...interface{}) {
+	args := append([]interface{}{"[ERROR] "}, v...)
+	defaultLogger.logger.Print(args...)
+}
+
+// Errorf logs a formatted error message
+func Errorf(format string, v ...interface{}) {
+	defaultLogger.logger.Printf("[ERROR] "+format, v...)
+}
+
 // IsDebugEnabled returns true if debug logging is enabled
 func IsDebugEnabled() bool {
 	return defaultLogger.level >= DEBUG

@@ -3,7 +3,7 @@
 
 package main
 
-import "github.com/srodi/mcp-ebpf/pkg/logger"
+import "github.com/srodi/ebpf-server/pkg/logger"
 
 func init() {
 	// Enable debug logging when built with debug tag

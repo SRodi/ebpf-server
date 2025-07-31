@@ -1,33 +1,35 @@
-# mcp-ebpf
+# eBPF Network Monitor
 
-A Model Context Protocol (MCP) server that uses eBPF to monitor network connections and provide real-time network analytics.
+An HTTP API server that uses eBPF to monitor network connections and provide real-time network analytics.
 
 ## Overview
 
-This project implements an MCP server that leverages eBPF (Extended Berkeley Packet Filter) technology to monitor network connections at the kernel level. It provides APIs to retrieve connection statistics and network metrics through a simple HTTP interface.
+This project implements an HTTP API server that leverages eBPF (Extended Berkeley Packet Filter) technology to monitor network connections at the kernel level. It provides **RESTful endpoints** to retrieve connection statistics and network metrics, making it easy to integrate with monitoring systems, dashboards, and automation tools.
 
 ## Features
 
 - **eBPF-based Network Monitoring**: Efficient kernel-level network connection tracking
-- **MCP Protocol Support**: Compatible with Model Context Protocol for AI tool integration
-- **Real-time Analytics**: Live network connection statistics and metrics
+- **REST API**: Simple HTTP endpoints for easy integration
+- **Real-time Analytics**: Live network connection statistics and metrics  
 - **Low Overhead**: Minimal performance impact using eBPF technology
-- **HTTP API**: Simple REST-like interface for querying network data
+- **JSON Responses**: Structured data with human-readable messages
+- **Protocol Detection**: Intelligent identification of TCP/UDP protocols by port
 
 ## Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   HTTP Client   │───▶│   MCP Server    │───▶│  eBPF Programs  │
-│                 │    │   (Port 8080)   │    │   (Kernel)      │
+│   HTTP Client   │───▶│ HTTP API Server │───▶│  eBPF Programs  │
+│ (curl, apps,    │    │     (REST)      │    │   (Kernel)      │
+│  monitoring)    │    │                 │    │                 │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
 The server consists of:
 - **eBPF Programs** (`bpf/`): Kernel-space programs for network monitoring
-- **MCP Handler** (`internal/mcp/`): Protocol implementation and API endpoints
+- **HTTP API** (`internal/api/`): RESTful endpoints for connection analysis
 - **eBPF Loader** (`internal/bpf/`): Go bindings for eBPF program management
-- **HTTP Server** (`internal/server/`): Web server handling client requests
+- **HTTP Server** (`cmd/server/`): Main server with routing and middleware
 
 ## Prerequisites
 
@@ -67,8 +69,8 @@ brew install go llvm
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/srodi/mcp-ebpf.git
-   cd mcp-ebpf
+   git clone https://github.com/srodi/ebpf-server.git
+   cd ebpf-server
    ```
 
 2. **Check system dependencies:**
@@ -88,162 +90,224 @@ brew install go llvm
 
 5. **Run the server (requires root):**
    ```bash
-   make run
+   sudo make run
    ```
+   This starts the HTTP API server on port 8080.
 
-The server will start on port 8080 and begin monitoring network connections.
+   **Alternative**: Run directly with custom address
+   ```bash
+   sudo ./bin/ebpf-server -addr :9090
+   ```
 
 ## Usage
 
-### API Endpoints
+### HTTP API Endpoints
 
-The server exposes the following MCP-compatible endpoint:
+The server provides a REST API on port 8080 (default) with the following endpoints:
 
-**POST /mcp**
+#### GET /health
 
-#### get_connection_summary
+Health check endpoint to verify the server is running.
 
-Get connection attempt statistics for a specific process over a time period. You can query by either PID or command name.
-
-**Important**: This tool captures `connect()` syscall attempts, not actual network latency. It counts how many times a process attempted to establish connections, which is useful for monitoring application behavior and connection patterns.
-
-Request format (by PID):
+**Response:**
 ```json
 {
-  "method": "get_connection_summary",
-  "params": {
-    "pid": 1234,
-    "duration": 60
-  }
+  "status": "healthy",
+  "service": "ebpf-server",
+  "version": "v1.0.0"
 }
 ```
 
-Request format (by command name - better for short-lived processes):
+#### POST /api/connection-summary
+
+Get connection attempt statistics for a specific process over a time period.
+
+**Important**: This endpoint captures `connect()` syscall attempts, not actual network latency. It counts how many times a process attempted to establish connections.
+
+**Request Body:**
 ```json
 {
-  "method": "get_connection_summary",
-  "params": {
-    "command": "curl",
-    "duration": 60
-  }
+  "pid": 1234,              // Process ID (optional, use either pid OR command)
+  "command": "curl",        // Command name (optional, use either pid OR command)
+  "duration": 60            // Duration in seconds (1-3600, required)
 }
 ```
 
-Response format:
+**Response:**
 ```json
 {
-  "result": {
-    "total_attempts": 15
-  }
+  "total_attempts": 5,
+  "pid": 1234,
+  "command": "",
+  "duration": 60,
+  "message": "Found 5 connection attempts from PID 1234 over 60 seconds"
 }
 ```
 
-#### list_connections
+#### GET /api/list-connections
 
-List all tracked connection events (useful for debugging).
+List all tracked connection events with optional query parameters.
 
-Request format:
+**Query Parameters:**
+- `pid` (integer, optional): Filter connections for specific Process ID
+- `limit` (integer, optional): Maximum connections to return per PID (default: 100, max: 1000)
+
+**Example:**
+```bash
+curl "http://localhost:8080/api/list-connections?pid=1234&limit=50"
+```
+
+#### POST /api/list-connections
+
+List all tracked connection events with JSON request body (alternative to GET).
+
+**Request Body:**
 ```json
 {
-  "method": "list_connections",
-  "params": {}
+  "pid": 1234,    // Optional: Filter by PID
+  "limit": 100    // Optional: Limit results per PID
 }
 ```
 
-Response format:
+**Response (both GET and POST):**
 ```json
 {
-  "result": {
+  "total_pids": 3,
+  "connections": {
     "1234": [
       {
         "pid": 1234,
-        "timestamp_ns": 1674123456789000000,
-        "return_code": 0,
         "command": "curl",
-        "destination_ip": "93.184.216.34",
-        "destination_port": 80,
         "destination": "93.184.216.34:80",
-        "address_family": 2,
         "protocol": "TCP",
-        "socket_type": "STREAM",
-        "wall_time": "2025-07-29T14:30:56Z",
-        "note": "timestamp_ns is nanoseconds since boot, wall_time is converted to UTC"
+        "return_code": 0,
+        "timestamp": "2025-07-31T14:30:56Z"
       }
     ]
+  },
+  "truncated": false,
+  "message": "Found 1 total connections across 1 processes"
+}
+```
+
+#### GET /
+
+Service information and API documentation.
+
+**Response:**
+```json
+{
+  "service": "eBPF Network Monitor",
+  "version": "v1.0.0",
+  "description": "HTTP API for eBPF-based network connection monitoring",
+  "endpoints": {
+    "POST /api/connection-summary": "Get connection summary for a process",
+    "GET|POST /api/list-connections": "List network connections",
+    "GET /health": "Service health check"
   }
 }
 ```
 
 ### Example Usage
 
+**Start the server:**
 ```bash
-# First, start the server (requires root privileges)
+# Build and run (requires root for eBPF)
 sudo make run
 
-# Method 1: Query by command name (easier for short-lived processes)
-# Generate some curl connections
-for i in {1..5}; do
-  curl -s http://httpbin.org/ip > /dev/null
-  sleep 1
-done
-
-# Query all curl connections from the last 60 seconds
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "method": "get_connection_summary",
-    "params": {
-      "command": "curl",
-      "duration": 60
-    }
-  }' | jq .
-
-# Method 2: Query by PID (for long-running processes)
-# Start a long-running connection
-curl -s http://httpbin.org/delay/10 > /dev/null &
-CURL_PID=$!
-echo "curl PID: $CURL_PID"
-
-# Query immediately while process is running
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"method\": \"get_connection_summary\",
-    \"params\": {
-      \"pid\": $CURL_PID,
-      \"duration\": 60
-    }
-  }" | jq .
-
-# Method 3: Monitor a specific service (most practical use case)
-# Example: Monitor SSH connections
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "method": "get_connection_summary",
-    "params": {
-      "command": "ssh",
-      "duration": 3600
-    }
-  }' | jq .
-
-# List all tracked connections for debugging
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "method": "list_connections",
-    "params": {}
-  }' | jq .
+# Or run directly
+sudo ./bin/ebpf-server -addr :8080
 ```
 
+**Test the API:**
+```bash
+# Check health
+curl http://localhost:8080/health
+
+# Get connection summary for a specific command
+curl -X POST http://localhost:8080/api/connection-summary \
+  -H "Content-Type: application/json" \
+  -d '{
+    "command": "curl",
+    "duration": 30
+  }'
+
+# List all connections
+curl http://localhost:8080/api/list-connections
+
+# List connections for specific PID with limit
+curl "http://localhost:8080/api/list-connections?pid=1234&limit=10"
+```
+
+**Integration with monitoring tools:**
+```bash
+# Use with Prometheus/monitoring
+curl -s http://localhost:8080/api/connection-summary \
+  -d '{"command":"nginx","duration":60}' | jq '.total_attempts'
+
+# Use with scripts
+CONNECTIONS=$(curl -s http://localhost:8080/api/list-connections | jq '.total_pids')
+echo "Currently tracking $CONNECTIONS processes"
+```
+
+## Testing
+
+To test that the server is working correctly:
+
+1. **Run the unit tests:**
+   ```bash
+   make test
+   ```
+
+2. **Test the HTTP API server:**
+   ```bash
+   # Start the server (requires root)
+   sudo make run
+   
+   # Test from another terminal
+   curl http://localhost:8080/health
+   
+   # Test connection summary
+   curl -X POST http://localhost:8080/api/connection-summary \
+     -H "Content-Type: application/json" \
+     -d '{"command":"test","duration":30}'
+   
+   # Test list connections
+   curl http://localhost:8080/api/list-connections
+   ```
+
+3. **Generate network activity for monitoring:**
+   ```bash
+   # In another terminal, create some connections
+   curl -s http://httpbin.org/ip > /dev/null
+   curl -s https://www.google.com > /dev/null
+   
+   # Check captured connections
+   curl http://localhost:8080/api/list-connections | jq .
+   ```
+
+4. **Test with specific processes:**
+   ```bash
+   # Get summary for curl commands
+   curl -X POST http://localhost:8080/api/connection-summary \
+     -H "Content-Type: application/json" \
+     -d '{"command":"curl","duration":60}'
+   
+   # Monitor specific PID
+   curl -X POST http://localhost:8080/api/connection-summary \
+     -H "Content-Type: application/json" \
+     -d '{"pid":1234,"duration":30}'
+   ```
+
 **Note:** 
-- The tool is most useful for monitoring **persistent services** (ssh, databases, web servers) or **analyzing historical connection patterns**
+- The API captures `connect()` syscall attempts, useful for monitoring **persistent services** and **connection patterns**
 - For short-lived processes like individual curl commands, use the **command name** instead of PID
 - Current eBPF program monitors TCP `connect()` syscalls only (not ICMP like ping)
+- API responses include human-readable messages along with structured data
 
 ## Protocol Detection and Testing
 
-The MCP server includes enhanced protocol detection that identifies connection types and provides detailed network information:
+The HTTP API server includes enhanced protocol detection that identifies connection types and provides detailed network information:
 
 ### Supported Protocols
 
@@ -267,7 +331,7 @@ The MCP server includes enhanced protocol detection that identifies connection t
 ### Testing Protocol Detection
 
 ```bash
-# Start the MCP server
+# Start the HTTP API server
 sudo make run
 
 # In another terminal, generate test connections
@@ -293,10 +357,13 @@ s.close()
 print('Test complete')
 "
 
-# Check captured connections
-curl -X POST http://localhost:8080/mcp \
+# Check captured connections using the HTTP API
+curl http://localhost:8080/api/list-connections | jq .
+
+# Get summary for python connections
+curl -X POST http://localhost:8080/api/connection-summary \
   -H "Content-Type: application/json" \
-  -d '{"method":"list_connections","params":{}}' | jq '.result | to_entries[-1:]'
+  -d '{"command":"python3","duration":60}'
 ```
 
 ### Example Protocol Detection Output
@@ -348,18 +415,22 @@ make run-dev
 ### Testing
 
 ```bash
-# Run all tests
+# Run all unit tests
 make test
 
 # Run tests with race detection
 make test-race
+
+# Test the HTTP API integration
+curl http://localhost:8080/health
 ```
 
 **Test Coverage:**
 - **Logger Package**: Debug level functionality, global logger behavior, level switching
 - **BPF Types**: Event parsing, IP conversion, protocol/socket type detection, time conversion
-- **MCP Handler**: API endpoints, request/response handling, error cases, invalid input
+- **API Handlers**: HTTP endpoints, request/response handling, error cases, input validation
 - **HTTP Server**: Route handling, timeouts, integration testing
+- **Integration Testing**: API endpoint testing with various request types
 
 ### Code Quality
 
@@ -389,17 +460,13 @@ make dev-setup
 │       ├── main.go        # Application entry point
 │       └── debug.go       # Debug build configuration
 ├── internal/
-│   ├── bpf/               # eBPF program loader and utilities
-│   │   ├── loader.go      # eBPF program loading logic
-│   │   ├── types.go       # eBPF data structures
-│   │   └── types_test.go  # BPF types unit tests
-│   ├── mcp/               # MCP protocol implementation
-│   │   ├── handler.go     # HTTP request handlers
-│   │   ├── handler_test.go # MCP handler unit tests
-│   │   └── schema.go      # Request/response schemas
-│   └── server/
-│       ├── server.go      # HTTP server setup
-│       └── server_test.go # Server unit tests
+│   ├── api/               # HTTP API handlers and routes
+│   │   ├── handlers.go    # HTTP request handlers
+│   │   └── handlers_test.go # API handler unit tests
+│   └── bpf/               # eBPF program loader and utilities
+│       ├── loader.go      # eBPF program loading logic
+│       ├── types.go       # eBPF data structures
+│       └── types_test.go  # BPF types unit tests
 ├── pkg/
 │   └── logger/            # Custom logging package
 │       ├── logger.go      # Logger implementation
@@ -432,7 +499,7 @@ make dev-setup
 Run with debug symbols and verbose logging for detailed troubleshooting:
 ```bash
 make build-dev
-sudo ./bin/mcp-ebpf-dev
+sudo ./bin/ebpf-server-dev
 ```
 
 Debug builds include detailed logging of:
@@ -443,7 +510,7 @@ Debug builds include detailed logging of:
 
 ### Logs
 
-The server logs to stdout. Check for eBPF loading errors and HTTP server status.
+The server logs to stdout. Check for eBPF loading errors and HTTP server startup messages.
 
 ## Contributing
 
@@ -469,8 +536,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Related Projects
 
 - [Cilium eBPF Library](https://github.com/cilium/ebpf) - Go eBPF library used in this project
-- [Model Context Protocol](https://modelcontextprotocol.io/) - Protocol specification
 - [eBPF Documentation](https://ebpf.io/) - eBPF learning resources
+- [BPFTrace](https://github.com/iovisor/bpftrace) - High-level tracing language for eBPF
+- [Falco](https://falco.org/) - Cloud-native runtime security with eBPF
 
 ## Support
 

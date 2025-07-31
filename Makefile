@@ -1,7 +1,7 @@
-# mcp-ebpf - MCP Server with eBPF Network Monitoring
+# ebpf-server - HTTP API Server with eBPF Network Monitoring
 
 # Variables
-BINARY_NAME := mcp-ebpf
+BINARY_NAME := ebpf-server
 BPF_SOURCES := $(wildcard bpf/*.c)
 BPF_OBJECTS := $(BPF_SOURCES:.c=.o)
 GO_SOURCES := $(shell find . -name '*.go' -not -path './vendor/*')
@@ -65,29 +65,30 @@ vmlinux:
 		-Wall \
 		-g -c $< -o $@
 
-# Build the Go binary
+# Build the Go binary (HTTP transport)
 .PHONY: build
-build: $(BPF_OBJECTS)
+build: generate
 	@echo "Building $(BINARY_NAME)..."
-	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/$(BINARY_NAME) ./cmd/server
+	go build -o bin/$(BINARY_NAME) ./cmd/server
 
-# Development build with debug symbols and debug logging
+# Build development version with debug symbols and verbose debug logging
 .PHONY: build-dev
-build-dev: $(BPF_OBJECTS)
+build-dev: generate
 	@echo "Building $(BINARY_NAME) with debug symbols and debug logging..."
 	go build -race -tags debug -o bin/$(BINARY_NAME)-dev ./cmd/server
 
-# Run the server (requires root for eBPF)
+# Run the server (requires root for eBPF) - HTTP transport
 .PHONY: run
 run: build
 	@echo "Running $(BINARY_NAME) (requires root privileges)..."
-	sudo ./bin/$(BINARY_NAME)
+	@echo "HTTP server will start on port 8080"
+	sudo ./bin/$(BINARY_NAME) -addr :8080
 
 # Run in development mode
 .PHONY: run-dev
 run-dev: build-dev
 	@echo "Running $(BINARY_NAME) in development mode..."
-	sudo ./bin/$(BINARY_NAME)-dev
+	sudo ./bin/$(BINARY_NAME)-dev -addr :8080
 
 # Install dependencies
 .PHONY: deps
