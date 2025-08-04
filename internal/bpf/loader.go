@@ -60,6 +60,114 @@ func (e *packetDropEventWrapper) GetWallClockTime() time.Time {
 	return bootTime.Add(time.Duration(e.DropEvent.TS))
 }
 
+// connectionProgramWrapper wraps the legacy program for testing
+type connectionProgramWrapper struct {
+	storage EventStorage
+}
+
+func (p *connectionProgramWrapper) GetName() string {
+	return "connection"
+}
+
+func (p *connectionProgramWrapper) GetDescription() string {
+	return "Mock connection monitoring program for testing"
+}
+
+func (p *connectionProgramWrapper) GetObjectPath() string {
+	return "bpf/connection.o"
+}
+
+func (p *connectionProgramWrapper) Load() error {
+	return fmt.Errorf("mock program cannot load")
+}
+
+func (p *connectionProgramWrapper) Attach() error {
+	return fmt.Errorf("mock program cannot attach")
+}
+
+func (p *connectionProgramWrapper) Start(ctx context.Context) error {
+	return fmt.Errorf("mock program cannot start")
+}
+
+func (p *connectionProgramWrapper) Stop() error {
+	return nil
+}
+
+func (p *connectionProgramWrapper) IsRunning() bool {
+	return false
+}
+
+func (p *connectionProgramWrapper) GetEventChannel() <-chan BPFEvent {
+	return make(<-chan BPFEvent)
+}
+
+func (p *connectionProgramWrapper) GetSummary(pid uint32, command string, durationSeconds int) int {
+	since := GetSystemBootTime().Add(-time.Duration(durationSeconds) * time.Second)
+	return p.storage.Count(pid, command, "connection", since)
+}
+
+func (p *connectionProgramWrapper) GetAllEvents() map[uint32][]BPFEvent {
+	allEvents := p.storage.GetAll()
+	if connectionEvents, exists := allEvents["connection"]; exists {
+		return connectionEvents
+	}
+	return make(map[uint32][]BPFEvent)
+}
+
+// packetDropProgramWrapper wraps the legacy program for testing
+type packetDropProgramWrapper struct {
+	storage EventStorage
+}
+
+func (p *packetDropProgramWrapper) GetName() string {
+	return "packet_drop"
+}
+
+func (p *packetDropProgramWrapper) GetDescription() string {
+	return "Mock packet drop monitoring program for testing"
+}
+
+func (p *packetDropProgramWrapper) GetObjectPath() string {
+	return "bpf/packet_drop.o"
+}
+
+func (p *packetDropProgramWrapper) Load() error {
+	return fmt.Errorf("mock program cannot load")
+}
+
+func (p *packetDropProgramWrapper) Attach() error {
+	return fmt.Errorf("mock program cannot attach")
+}
+
+func (p *packetDropProgramWrapper) Start(ctx context.Context) error {
+	return fmt.Errorf("mock program cannot start")
+}
+
+func (p *packetDropProgramWrapper) Stop() error {
+	return nil
+}
+
+func (p *packetDropProgramWrapper) IsRunning() bool {
+	return false
+}
+
+func (p *packetDropProgramWrapper) GetEventChannel() <-chan BPFEvent {
+	return make(<-chan BPFEvent)
+}
+
+func (p *packetDropProgramWrapper) GetSummary(pid uint32, command string, durationSeconds int) int {
+	since := GetSystemBootTime().Add(-time.Duration(durationSeconds) * time.Second)
+	return p.storage.Count(pid, command, "packet_drop", since)
+}
+
+func (p *packetDropProgramWrapper) GetAllEvents() map[uint32][]BPFEvent {
+	allEvents := p.storage.GetAll()
+	if dropEvents, exists := allEvents["packet_drop"]; exists {
+		return dropEvents
+	}
+	return make(map[uint32][]BPFEvent)
+}
+
 // connectionProgram implements BPFProgram for connection monitoring
 type connectionProgram struct {
 	name        string

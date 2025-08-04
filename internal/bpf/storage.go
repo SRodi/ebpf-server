@@ -40,18 +40,35 @@ func (s *InMemoryStorage) Store(event BPFEvent) error {
 	return nil
 }
 
+// Helper methods for time and command filtering
+func (s *InMemoryStorage) matchesTimeFilter(event BPFEvent, since time.Time) bool {
+	if since.IsZero() {
+		return true // No time filter
+	}
+	
+	// Convert event timestamp to wall clock time
+	eventTime := event.GetWallClockTime()
+	return eventTime.After(since) || eventTime.Equal(since)
+}
+
+func (s *InMemoryStorage) matchesCommandFilter(event BPFEvent, command string) bool {
+	if command == "" {
+		return true // No command filter
+	}
+	return strings.Contains(strings.ToLower(event.GetCommand()), strings.ToLower(command))
+}
+
 // GetByPID retrieves events for a specific PID within a time window
 func (s *InMemoryStorage) GetByPID(pid uint32, since time.Time) ([]BPFEvent, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var result []BPFEvent
-	sinceNano := time.Since(GetSystemBootTime()).Nanoseconds() - time.Since(since).Nanoseconds()
 
 	for _, pidMap := range s.events {
 		if events, exists := pidMap[pid]; exists {
 			for _, event := range events {
-				if int64(event.GetTimestamp()) >= sinceNano {
+				if s.matchesTimeFilter(event, since) {
 					result = append(result, event)
 				}
 			}
@@ -67,13 +84,12 @@ func (s *InMemoryStorage) GetByCommand(command string, since time.Time) ([]BPFEv
 	defer s.mu.RUnlock()
 
 	var result []BPFEvent
-	sinceNano := time.Since(GetSystemBootTime()).Nanoseconds() - time.Since(since).Nanoseconds()
 	commandLower := strings.ToLower(command)
 
 	for _, pidMap := range s.events {
 		for _, events := range pidMap {
 			for _, event := range events {
-				if int64(event.GetTimestamp()) >= sinceNano &&
+				if s.matchesTimeFilter(event, since) &&
 					strings.Contains(strings.ToLower(event.GetCommand()), commandLower) {
 					result = append(result, event)
 				}
@@ -90,12 +106,11 @@ func (s *InMemoryStorage) GetByType(eventType string, since time.Time) ([]BPFEve
 	defer s.mu.RUnlock()
 
 	var result []BPFEvent
-	sinceNano := time.Since(GetSystemBootTime()).Nanoseconds() - time.Since(since).Nanoseconds()
 
 	if pidMap, exists := s.events[eventType]; exists {
 		for _, events := range pidMap {
 			for _, event := range events {
-				if int64(event.GetTimestamp()) >= sinceNano {
+				if s.matchesTimeFilter(event, since) {
 					result = append(result, event)
 				}
 			}
@@ -111,7 +126,6 @@ func (s *InMemoryStorage) Count(pid uint32, command string, eventType string, si
 	defer s.mu.RUnlock()
 
 	count := 0
-	sinceNano := time.Since(GetSystemBootTime()).Nanoseconds() - time.Since(since).Nanoseconds()
 
 	// Determine which event types to search
 	eventTypes := []string{}
@@ -132,11 +146,9 @@ func (s *InMemoryStorage) Count(pid uint32, command string, eventType string, si
 		// Search strategy based on criteria
 		if command != "" {
 			// Search by command across all PIDs
-			commandLower := strings.ToLower(command)
 			for _, events := range pidMap {
 				for _, event := range events {
-					if int64(event.GetTimestamp()) >= sinceNano &&
-						strings.Contains(strings.ToLower(event.GetCommand()), commandLower) {
+					if s.matchesTimeFilter(event, since) && s.matchesCommandFilter(event, command) {
 						count++
 					}
 				}
@@ -145,7 +157,7 @@ func (s *InMemoryStorage) Count(pid uint32, command string, eventType string, si
 			// Search by specific PID
 			if events, exists := pidMap[pid]; exists {
 				for _, event := range events {
-					if int64(event.GetTimestamp()) >= sinceNano {
+					if s.matchesTimeFilter(event, since) {
 						count++
 					}
 				}
@@ -154,7 +166,7 @@ func (s *InMemoryStorage) Count(pid uint32, command string, eventType string, si
 			// Count all events in time window
 			for _, events := range pidMap {
 				for _, event := range events {
-					if int64(event.GetTimestamp()) >= sinceNano {
+					if s.matchesTimeFilter(event, since) {
 						count++
 					}
 				}
@@ -189,14 +201,15 @@ func (s *InMemoryStorage) Cleanup(maxAge time.Duration) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cutoffTime := time.Since(GetSystemBootTime()).Nanoseconds() - maxAge.Nanoseconds()
+	cutoffTime := time.Now().Add(-maxAge)
 	removed := 0
 
 	for eventType, pidMap := range s.events {
 		for pid, events := range pidMap {
 			newEvents := make([]BPFEvent, 0, len(events))
 			for _, event := range events {
-				if int64(event.GetTimestamp()) >= cutoffTime {
+				eventTime := event.GetWallClockTime()
+				if eventTime.After(cutoffTime) || eventTime.Equal(cutoffTime) {
 					newEvents = append(newEvents, event)
 				} else {
 					removed++
