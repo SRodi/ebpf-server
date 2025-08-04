@@ -1,5 +1,26 @@
 basePath: /
 definitions:
+  api.ConnectionInfo:
+    properties:
+      command:
+        example: curl
+        type: string
+      destination:
+        example: 192.168.1.100:80
+        type: string
+      pid:
+        example: 1234
+        type: integer
+      protocol:
+        example: TCP
+        type: string
+      return_code:
+        example: 0
+        type: integer
+      timestamp:
+        example: "2023-08-04T10:15:30Z"
+        type: string
+    type: object
   api.ConnectionSummaryRequest:
     properties:
       command:
@@ -36,9 +57,122 @@ definitions:
   api.ErrorResponse:
     properties:
       error:
+        example: Bad Request
         type: string
       message:
+        example: Invalid parameter value
         type: string
+    type: object
+  api.ListConnectionsRequest:
+    properties:
+      limit:
+        description: 'Optional: Maximum connections to return per PID (default: 100,
+          max: 1000)'
+        example: 100
+        type: integer
+      pid:
+        description: 'Optional: Filter connections for specific Process ID'
+        example: 1234
+        type: integer
+    type: object
+  api.ListConnectionsResponse:
+    properties:
+      connections:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/api.ConnectionInfo'
+          type: array
+        type: object
+      message:
+        example: Found 15 total connections across 2 processes
+        type: string
+      total_pids:
+        example: 2
+        type: integer
+      truncated:
+        example: false
+        type: boolean
+    type: object
+  api.ListPacketDropsRequest:
+    properties:
+      limit:
+        description: 'Optional: Maximum drops to return per PID (default: 100, max:
+          1000)'
+        example: 100
+        type: integer
+      pid:
+        description: 'Optional: Filter drops for specific Process ID'
+        example: 1234
+        type: integer
+    type: object
+  api.ListPacketDropsResponse:
+    properties:
+      drops:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/api.PacketDropInfo'
+          type: array
+        type: object
+      message:
+        example: Found 25 packet drops across 3 processes
+        type: string
+      total_pids:
+        example: 3
+        type: integer
+      truncated:
+        example: false
+        type: boolean
+    type: object
+  api.PacketDropInfo:
+    properties:
+      command:
+        example: curl
+        type: string
+      drop_reason:
+        example: SKB_FREE
+        type: string
+      pid:
+        example: 1234
+        type: integer
+      skb_length:
+        example: 1500
+        type: integer
+      timestamp:
+        example: 2023-08-04 10:15:30.123 UTC
+        type: string
+    type: object
+  api.PacketDropSummaryRequest:
+    properties:
+      command:
+        example: curl
+        type: string
+      duration:
+        example: 60
+        type: integer
+      pid:
+        example: 1234
+        type: integer
+      process_name:
+        example: curl
+        type: string
+    type: object
+  api.PacketDropSummaryResponse:
+    properties:
+      command:
+        example: curl
+        type: string
+      duration:
+        example: 60
+        type: integer
+      message:
+        example: Found 15 packet drops from command 'curl' over 60 seconds
+        type: string
+      pid:
+        example: 1234
+        type: integer
+      total_drops:
+        example: 15
+        type: integer
     type: object
   api.ProgramInfo:
     properties:
@@ -172,6 +306,187 @@ paths:
       summary: Query events across all programs
       tags:
       - events
+  /api/list-connections:
+    get:
+      consumes:
+      - application/json
+      description: Returns connection events with optional filtering by PID and limiting
+        results. Supports both GET (query parameters) and POST (JSON body) methods.
+      parameters:
+      - description: Process ID to filter by
+        in: query
+        name: pid
+        type: integer
+      - description: 'Maximum connections to return per PID (default: 100, max: 1000)'
+        in: query
+        name: limit
+        type: integer
+      - description: Connections list request (POST only)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/api.ListConnectionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ListConnectionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List connection events
+      tags:
+      - connections
+    post:
+      consumes:
+      - application/json
+      description: Returns connection events with optional filtering by PID and limiting
+        results. Supports both GET (query parameters) and POST (JSON body) methods.
+      parameters:
+      - description: Process ID to filter by
+        in: query
+        name: pid
+        type: integer
+      - description: 'Maximum connections to return per PID (default: 100, max: 1000)'
+        in: query
+        name: limit
+        type: integer
+      - description: Connections list request (POST only)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/api.ListConnectionsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ListConnectionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List connection events
+      tags:
+      - connections
+  /api/list-packet-drops:
+    get:
+      consumes:
+      - application/json
+      description: Returns packet drop events with optional filtering by PID and limiting
+        results. Supports both GET (query parameters) and POST (JSON body) methods.
+      parameters:
+      - description: Process ID to filter by
+        in: query
+        name: pid
+        type: integer
+      - description: 'Maximum packet drops to return per PID (default: 100, max: 1000)'
+        in: query
+        name: limit
+        type: integer
+      - description: Packet drops list request (POST only)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/api.ListPacketDropsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ListPacketDropsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List packet drop events
+      tags:
+      - packet_drops
+    post:
+      consumes:
+      - application/json
+      description: Returns packet drop events with optional filtering by PID and limiting
+        results. Supports both GET (query parameters) and POST (JSON body) methods.
+      parameters:
+      - description: Process ID to filter by
+        in: query
+        name: pid
+        type: integer
+      - description: 'Maximum packet drops to return per PID (default: 100, max: 1000)'
+        in: query
+        name: limit
+        type: integer
+      - description: Packet drops list request (POST only)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/api.ListPacketDropsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ListPacketDropsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List packet drop events
+      tags:
+      - packet_drops
+  /api/packet-drop-summary:
+    post:
+      consumes:
+      - application/json
+      description: Returns the count of packet drop events within a specified time
+        window, filtered by PID or command
+      parameters:
+      - description: Packet drop summary request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.PacketDropSummaryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.PacketDropSummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Get packet drop event statistics
+      tags:
+      - packet_drops
   /api/programs:
     get:
       description: Returns information about all currently registered and running

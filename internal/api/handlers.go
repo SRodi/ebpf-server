@@ -38,64 +38,64 @@ type PacketDropSummaryRequest struct {
 
 // PacketDropSummaryResponse defines the output structure for the packet drop summary endpoint
 type PacketDropSummaryResponse struct {
-	Total   int    `json:"total_drops"`
-	PID     int    `json:"pid,omitempty"`
-	Command string `json:"command,omitempty"`
-	Seconds int    `json:"duration"`
-	Message string `json:"message"`
+	Total   int    `json:"total_drops" example:"15"`
+	PID     int    `json:"pid,omitempty" example:"1234"`
+	Command string `json:"command,omitempty" example:"curl"`
+	Seconds int    `json:"duration" example:"60"`
+	Message string `json:"message" example:"Found 15 packet drops from command 'curl' over 60 seconds"`
 }
 
 // ListConnectionsRequest defines the input parameters for the list connections endpoint
 type ListConnectionsRequest struct {
-	PID   *int `json:"pid,omitempty"`   // Optional: Filter connections for specific Process ID
-	Limit *int `json:"limit,omitempty"` // Optional: Maximum connections to return per PID (default: 100, max: 1000)
+	PID   *int `json:"pid,omitempty" example:"1234"`   // Optional: Filter connections for specific Process ID
+	Limit *int `json:"limit,omitempty" example:"100"` // Optional: Maximum connections to return per PID (default: 100, max: 1000)
 }
 
 // ListPacketDropsRequest defines the input parameters for the list packet drops endpoint
 type ListPacketDropsRequest struct {
-	PID   *int `json:"pid,omitempty"`   // Optional: Filter drops for specific Process ID
-	Limit *int `json:"limit,omitempty"` // Optional: Maximum drops to return per PID (default: 100, max: 1000)
+	PID   *int `json:"pid,omitempty" example:"1234"`   // Optional: Filter drops for specific Process ID
+	Limit *int `json:"limit,omitempty" example:"100"` // Optional: Maximum drops to return per PID (default: 100, max: 1000)
 }
 
 // ConnectionInfo represents connection event information
 type ConnectionInfo struct {
-	PID         uint32 `json:"pid"`
-	Command     string `json:"command"`
-	Destination string `json:"destination"`
-	Protocol    string `json:"protocol"`
-	ReturnCode  int32  `json:"return_code"`
-	Timestamp   string `json:"timestamp"`
+	PID         uint32 `json:"pid" example:"1234"`
+	Command     string `json:"command" example:"curl"`
+	Destination string `json:"destination" example:"192.168.1.100:80"`
+	Protocol    string `json:"protocol" example:"TCP"`
+	ReturnCode  int32  `json:"return_code" example:"0"`
+	Timestamp   string `json:"timestamp" example:"2023-08-04T10:15:30Z"`
 }
 
 // PacketDropInfo represents packet drop event information
 type PacketDropInfo struct {
-	PID        uint32 `json:"pid"`
-	Command    string `json:"command"`
-	DropReason string `json:"drop_reason"`
-	SkbLength  uint32 `json:"skb_length"`
-	Timestamp  string `json:"timestamp"`
+	PID        uint32 `json:"pid" example:"1234"`
+	Command    string `json:"command" example:"curl"`
+	DropReason string `json:"drop_reason" example:"SKB_FREE"`
+	SkbLength  uint32 `json:"skb_length" example:"1500"`
+	Timestamp  string `json:"timestamp" example:"2023-08-04 10:15:30.123 UTC"`
 }
 
 // ListConnectionsResponse defines the output format for the list connections endpoint
 type ListConnectionsResponse struct {
-	TotalPIDs   int                         `json:"total_pids"`
+	TotalPIDs   int                         `json:"total_pids" example:"2"`
 	Connections map[string][]ConnectionInfo `json:"connections"`
-	Truncated   bool                        `json:"truncated"`
-	Message     string                      `json:"message"`
+	Truncated   bool                        `json:"truncated" example:"false"`
+	Message     string                      `json:"message" example:"Found 15 total connections across 2 processes"`
 }
 
 // ListPacketDropsResponse defines the output format for the list packet drops endpoint
 type ListPacketDropsResponse struct {
-	TotalPIDs int                         `json:"total_pids"`
+	TotalPIDs int                         `json:"total_pids" example:"3"`
 	Drops     map[string][]PacketDropInfo `json:"drops"`
-	Truncated bool                        `json:"truncated"`
-	Message   string                      `json:"message"`
+	Truncated bool                        `json:"truncated" example:"false"`
+	Message   string                      `json:"message" example:"Found 25 packet drops across 3 processes"`
 }
 
 // ErrorResponse represents an API error response
 type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
+	Error   string `json:"error" example:"Bad Request"`
+	Message string `json:"message" example:"Invalid parameter value"`
 }
 
 // ProgramInfo represents eBPF program information
@@ -216,6 +216,16 @@ func HandleConnectionSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandlePacketDropSummary handles the /api/packet-drop-summary endpoint
+// @Summary Get packet drop event statistics
+// @Description Returns the count of packet drop events within a specified time window, filtered by PID or command
+// @Tags packet_drops
+// @Accept json
+// @Produce json
+// @Param request body PacketDropSummaryRequest true "Packet drop summary request"
+// @Success 200 {object} PacketDropSummaryResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 405 {object} ErrorResponse
+// @Router /api/packet-drop-summary [post]
 func HandlePacketDropSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
@@ -291,6 +301,19 @@ func HandlePacketDropSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleListConnections handles the /api/list-connections endpoint
+// @Summary List connection events
+// @Description Returns connection events with optional filtering by PID and limiting results. Supports both GET (query parameters) and POST (JSON body) methods.
+// @Tags connections
+// @Accept json
+// @Produce json
+// @Param pid query int false "Process ID to filter by"
+// @Param limit query int false "Maximum connections to return per PID (default: 100, max: 1000)"
+// @Param request body ListConnectionsRequest false "Connections list request (POST only)"
+// @Success 200 {object} ListConnectionsResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 405 {object} ErrorResponse
+// @Router /api/list-connections [get]
+// @Router /api/list-connections [post]
 func HandleListConnections(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		// Handle GET request with query parameters
@@ -434,6 +457,19 @@ func processListConnectionsRequest(w http.ResponseWriter, req ListConnectionsReq
 }
 
 // HandleListPacketDrops handles the /api/list-packet-drops endpoint
+// @Summary List packet drop events
+// @Description Returns packet drop events with optional filtering by PID and limiting results. Supports both GET (query parameters) and POST (JSON body) methods.
+// @Tags packet_drops
+// @Accept json
+// @Produce json
+// @Param pid query int false "Process ID to filter by"
+// @Param limit query int false "Maximum packet drops to return per PID (default: 100, max: 1000)"
+// @Param request body ListPacketDropsRequest false "Packet drops list request (POST only)"
+// @Success 200 {object} ListPacketDropsResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 405 {object} ErrorResponse
+// @Router /api/list-packet-drops [get]
+// @Router /api/list-packet-drops [post]
 func HandleListPacketDrops(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:

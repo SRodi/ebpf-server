@@ -136,6 +136,276 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/list-connections": {
+            "get": {
+                "description": "Returns connection events with optional filtering by PID and limiting results. Supports both GET (query parameters) and POST (JSON body) methods.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "List connection events",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID to filter by",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum connections to return per PID (default: 100, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Connections list request (POST only)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.ListConnectionsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ListConnectionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Returns connection events with optional filtering by PID and limiting results. Supports both GET (query parameters) and POST (JSON body) methods.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "List connection events",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID to filter by",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum connections to return per PID (default: 100, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Connections list request (POST only)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.ListConnectionsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ListConnectionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/list-packet-drops": {
+            "get": {
+                "description": "Returns packet drop events with optional filtering by PID and limiting results. Supports both GET (query parameters) and POST (JSON body) methods.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "packet_drops"
+                ],
+                "summary": "List packet drop events",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID to filter by",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum packet drops to return per PID (default: 100, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Packet drops list request (POST only)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.ListPacketDropsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ListPacketDropsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Returns packet drop events with optional filtering by PID and limiting results. Supports both GET (query parameters) and POST (JSON body) methods.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "packet_drops"
+                ],
+                "summary": "List packet drop events",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID to filter by",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum packet drops to return per PID (default: 100, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Packet drops list request (POST only)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.ListPacketDropsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ListPacketDropsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/packet-drop-summary": {
+            "post": {
+                "description": "Returns the count of packet drop events within a specified time window, filtered by PID or command",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "packet_drops"
+                ],
+                "summary": "Get packet drop event statistics",
+                "parameters": [
+                    {
+                        "description": "Packet drop summary request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.PacketDropSummaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.PacketDropSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/programs": {
             "get": {
                 "description": "Returns information about all currently registered and running eBPF programs",
@@ -193,6 +463,35 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "api.ConnectionInfo": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "example": "curl"
+                },
+                "destination": {
+                    "type": "string",
+                    "example": "192.168.1.100:80"
+                },
+                "pid": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "protocol": {
+                    "type": "string",
+                    "example": "TCP"
+                },
+                "return_code": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2023-08-04T10:15:30Z"
+                }
+            }
+        },
         "api.ConnectionSummaryRequest": {
             "type": "object",
             "properties": {
@@ -243,10 +542,165 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "error": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Bad Request"
                 },
                 "message": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Invalid parameter value"
+                }
+            }
+        },
+        "api.ListConnectionsRequest": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "description": "Optional: Maximum connections to return per PID (default: 100, max: 1000)",
+                    "type": "integer",
+                    "example": 100
+                },
+                "pid": {
+                    "description": "Optional: Filter connections for specific Process ID",
+                    "type": "integer",
+                    "example": 1234
+                }
+            }
+        },
+        "api.ListConnectionsResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/api.ConnectionInfo"
+                        }
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Found 15 total connections across 2 processes"
+                },
+                "total_pids": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "truncated": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "api.ListPacketDropsRequest": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "description": "Optional: Maximum drops to return per PID (default: 100, max: 1000)",
+                    "type": "integer",
+                    "example": 100
+                },
+                "pid": {
+                    "description": "Optional: Filter drops for specific Process ID",
+                    "type": "integer",
+                    "example": 1234
+                }
+            }
+        },
+        "api.ListPacketDropsResponse": {
+            "type": "object",
+            "properties": {
+                "drops": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/api.PacketDropInfo"
+                        }
+                    }
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Found 25 packet drops across 3 processes"
+                },
+                "total_pids": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "truncated": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "api.PacketDropInfo": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "example": "curl"
+                },
+                "drop_reason": {
+                    "type": "string",
+                    "example": "SKB_FREE"
+                },
+                "pid": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "skb_length": {
+                    "type": "integer",
+                    "example": 1500
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2023-08-04 10:15:30.123 UTC"
+                }
+            }
+        },
+        "api.PacketDropSummaryRequest": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "example": "curl"
+                },
+                "duration": {
+                    "type": "integer",
+                    "example": 60
+                },
+                "pid": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "process_name": {
+                    "type": "string",
+                    "example": "curl"
+                }
+            }
+        },
+        "api.PacketDropSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "example": "curl"
+                },
+                "duration": {
+                    "type": "integer",
+                    "example": 60
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Found 15 packet drops from command 'curl' over 60 seconds"
+                },
+                "pid": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "total_drops": {
+                    "type": "integer",
+                    "example": 15
                 }
             }
         },
