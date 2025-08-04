@@ -97,6 +97,9 @@ type EventStorage interface {
 	// Store adds an event to storage
 	Store(event BPFEvent) error
 	
+	// Get retrieves events matching the given criteria within a time window
+	Get(pid uint32, command string, eventType string, since time.Time) ([]BPFEvent, error)
+	
 	// GetByPID retrieves events for a specific PID within a time window
 	GetByPID(pid uint32, since time.Time) ([]BPFEvent, error)
 	

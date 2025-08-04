@@ -40,6 +40,50 @@ func (s *InMemoryStorage) Store(event BPFEvent) error {
 	return nil
 }
 
+// Get retrieves events matching the given criteria within a time window
+func (s *InMemoryStorage) Get(pid uint32, command string, eventType string, since time.Time) ([]BPFEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []BPFEvent
+
+	// Determine which event types to search
+	eventTypes := []string{}
+	if eventType != "" {
+		eventTypes = append(eventTypes, eventType)
+	} else {
+		for et := range s.events {
+			eventTypes = append(eventTypes, et)
+		}
+	}
+
+	for _, et := range eventTypes {
+		if pidMap, exists := s.events[et]; exists {
+			// If PID is specified, search only that PID
+			if pid != 0 {
+				if events, pidExists := pidMap[pid]; pidExists {
+					for _, event := range events {
+						if s.matchesTimeFilter(event, since) && s.matchesCommandFilter(event, command) {
+							result = append(result, event)
+						}
+					}
+				}
+			} else {
+				// Search all PIDs
+				for _, events := range pidMap {
+					for _, event := range events {
+						if s.matchesTimeFilter(event, since) && s.matchesCommandFilter(event, command) {
+							result = append(result, event)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // Helper methods for time and command filtering
 func (s *InMemoryStorage) matchesTimeFilter(event BPFEvent, since time.Time) bool {
 	if since.IsZero() {

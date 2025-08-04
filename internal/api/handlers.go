@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/srodi/ebpf-server/internal/bpf"
 	"github.com/srodi/ebpf-server/pkg/logger"
@@ -12,27 +13,27 @@ import (
 
 // ConnectionSummaryRequest defines the input parameters for the connection summary endpoint
 type ConnectionSummaryRequest struct {
-	PID         int    `json:"pid,omitempty"`
-	Command     string `json:"command,omitempty"`
-	ProcessName string `json:"process_name,omitempty"`
-	Seconds     int    `json:"duration"`
+	PID         int    `json:"pid,omitempty" example:"1234"`
+	Command     string `json:"command,omitempty" example:"curl"`
+	ProcessName string `json:"process_name,omitempty" example:"curl"`
+	Seconds     int    `json:"duration" example:"60"`
 }
 
 // ConnectionSummaryResponse defines the output structure for the connection summary endpoint
 type ConnectionSummaryResponse struct {
-	Total   int    `json:"total_attempts"`
-	PID     int    `json:"pid,omitempty"`
-	Command string `json:"command,omitempty"`
-	Seconds int    `json:"duration"`
-	Message string `json:"message"`
+	Total   int    `json:"total_attempts" example:"42"`
+	PID     int    `json:"pid,omitempty" example:"1234"`
+	Command string `json:"command,omitempty" example:"curl"`
+	Seconds int    `json:"duration" example:"60"`
+	Message string `json:"message" example:"Found 42 connection attempts in the last 60 seconds"`
 }
 
 // PacketDropSummaryRequest defines the input parameters for the packet drop summary endpoint
 type PacketDropSummaryRequest struct {
-	PID         int    `json:"pid,omitempty"`
-	Command     string `json:"command,omitempty"`
-	ProcessName string `json:"process_name,omitempty"`
-	Seconds     int    `json:"duration"`
+	PID         int    `json:"pid,omitempty" example:"1234"`
+	Command     string `json:"command,omitempty" example:"curl"`
+	ProcessName string `json:"process_name,omitempty" example:"curl"`
+	Seconds     int    `json:"duration" example:"60"`
 }
 
 // PacketDropSummaryResponse defines the output structure for the packet drop summary endpoint
@@ -97,6 +98,21 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// ProgramInfo represents eBPF program information
+type ProgramInfo struct {
+	Name        string `json:"name" example:"connection"`
+	Description string `json:"description" example:"Monitors network connection attempts"`
+	Running     bool   `json:"running" example:"true"`
+	EventCount  int    `json:"event_count" example:"1234"`
+}
+
+// ProgramsResponse represents the programs list response
+type ProgramsResponse struct {
+	Programs []ProgramInfo `json:"programs"`
+	Total    int           `json:"total" example:"2"`
+	Message  string        `json:"message" example:"2 eBPF programs currently active"`
+}
+
 // writeJSONResponse writes a JSON response with the given status code
 func writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -115,6 +131,16 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 }
 
 // HandleConnectionSummary handles the /api/connection-summary endpoint
+// @Summary Get connection event statistics
+// @Description Returns the count of connection events within a specified time window, filtered by PID or command
+// @Tags connections
+// @Accept json
+// @Produce json
+// @Param request body ConnectionSummaryRequest true "Connection summary request"
+// @Success 200 {object} ConnectionSummaryResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 405 {object} ErrorResponse
+// @Router /api/connection-summary [post]
 func HandleConnectionSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
@@ -550,6 +576,13 @@ func processListPacketDropsRequest(w http.ResponseWriter, req ListPacketDropsReq
 }
 
 // HandleHealth provides a simple health check endpoint
+// @Summary Health check
+// @Description Returns the health status of the eBPF server and active programs
+// @Tags health
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Failure 405 {object} ErrorResponse
+// @Router /health [get]
 func HandleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeErrorResponse(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
@@ -563,4 +596,143 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONResponse(w, http.StatusOK, health)
+}
+
+// HandlePrograms lists all active eBPF programs
+// @Summary List active eBPF programs
+// @Description Returns information about all currently registered and running eBPF programs
+// @Tags programs
+// @Produce json
+// @Success 200 {object} ProgramsResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/programs [get]
+func HandlePrograms(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
+		return
+	}
+
+	manager := bpf.GetManager()
+	if manager == nil {
+		writeErrorResponse(w, http.StatusInternalServerError, "eBPF manager not initialized")
+		return
+	}
+
+	programs := []ProgramInfo{}
+	for _, program := range manager.GetPrograms() {
+		eventCount := 0
+		if allEvents := program.GetAllEvents(); allEvents != nil {
+			for _, events := range allEvents {
+				eventCount += len(events)
+			}
+		}
+
+		programs = append(programs, ProgramInfo{
+			Name:        program.GetName(),
+			Description: program.GetDescription(),
+			Running:     program.IsRunning(),
+			EventCount:  eventCount,
+		})
+	}
+
+	response := ProgramsResponse{
+		Programs: programs,
+		Total:    len(programs),
+		Message:  fmt.Sprintf("%d eBPF programs currently active", len(programs)),
+	}
+
+	writeJSONResponse(w, http.StatusOK, response)
+}
+
+// HandleEvents provides a unified endpoint to query events across all programs
+// @Summary Query events across all programs
+// @Description Returns events from all eBPF programs with optional filtering by PID, command, event type, and time window
+// @Tags events
+// @Produce json
+// @Param pid query int false "Process ID to filter by"
+// @Param command query string false "Command name to filter by"
+// @Param event_type query string false "Event type to filter by (e.g., 'connection', 'packet_drop')"
+// @Param duration query int false "Time window in seconds (default: 300)" default(300)
+// @Param limit query int false "Maximum number of events to return (default: 100)" default(100)
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/events [get]
+func HandleEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErrorResponse(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
+		return
+	}
+
+	// Parse query parameters
+	pidStr := r.URL.Query().Get("pid")
+	command := r.URL.Query().Get("command")
+	eventType := r.URL.Query().Get("event_type")
+	durationStr := r.URL.Query().Get("duration")
+	limitStr := r.URL.Query().Get("limit")
+
+	var pid uint32
+	if pidStr != "" {
+		if pidVal, err := strconv.ParseUint(pidStr, 10, 32); err != nil {
+			writeErrorResponse(w, http.StatusBadRequest, "Invalid PID parameter")
+			return
+		} else {
+			pid = uint32(pidVal)
+		}
+	}
+
+	duration := 300 // Default 5 minutes
+	if durationStr != "" {
+		if dur, err := strconv.Atoi(durationStr); err != nil || dur < 1 || dur > 3600 {
+			writeErrorResponse(w, http.StatusBadRequest, "Duration must be between 1 and 3600 seconds")
+			return
+		} else {
+			duration = dur
+		}
+	}
+
+	limit := 100 // Default limit
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err != nil || l < 1 || l > 1000 {
+			writeErrorResponse(w, http.StatusBadRequest, "Limit must be between 1 and 1000")
+			return
+		} else {
+			limit = l
+		}
+	}
+
+	manager := bpf.GetManager()
+	if manager == nil {
+		writeErrorResponse(w, http.StatusInternalServerError, "eBPF manager not initialized")
+		return
+	}
+
+	storage := manager.GetStorage()
+	since := bpf.GetSystemBootTime().Add(-time.Duration(duration) * time.Second)
+
+	events, err := storage.Get(pid, command, eventType, since)
+	if err != nil {
+		writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query events: %v", err))
+		return
+	}
+
+	// Limit results
+	if len(events) > limit {
+		events = events[:limit]
+	}
+
+	response := map[string]interface{}{
+		"events":   events,
+		"total":    len(events),
+		"limit":    limit,
+		"duration": duration,
+		"filters": map[string]interface{}{
+			"pid":        pid,
+			"command":    command,
+			"event_type": eventType,
+		},
+		"message": fmt.Sprintf("Found %d events in the last %d seconds", len(events), duration),
+	}
+
+	writeJSONResponse(w, http.StatusOK, response)
 }

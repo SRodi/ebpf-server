@@ -1,0 +1,310 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "A modular HTTP API server that uses eBPF to monitor network connections with an extensible plugin architecture.\n\n## Features\n- **Plugin-style eBPF Programs**: Independent, hot-swappable monitoring modules\n- **Event Storage**: Unified event collection and querying across all programs\n- **Manager-based Lifecycle**: Centralized program registration and management\n- **Auto-generated Documentation**: This documentation is generated from code annotations\n\n## Adding New Programs\nNew eBPF monitoring programs can be added by implementing the `BPFProgram` interface.\nSee the [Program Development Guide](https://github.com/srodi/ebpf-server/blob/main/docs/program-development.md) for detailed instructions.\n\n## Authentication\nThis API currently does not require authentication. Consider adding authentication for production deployments.",
+        "title": "eBPF Network Monitor API",
+        "contact": {
+            "name": "API Support",
+            "url": "https://github.com/srodi/ebpf-server/issues",
+            "email": "support@example.com"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://github.com/srodi/ebpf-server/blob/main/LICENSE"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/api/connection-summary": {
+            "post": {
+                "description": "Returns the count of connection events within a specified time window, filtered by PID or command",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "Get connection event statistics",
+                "parameters": [
+                    {
+                        "description": "Connection summary request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ConnectionSummaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ConnectionSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events": {
+            "get": {
+                "description": "Returns events from all eBPF programs with optional filtering by PID, command, event type, and time window",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Query events across all programs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID to filter by",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Command name to filter by",
+                        "name": "command",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event type to filter by (e.g., 'connection', 'packet_drop')",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 300,
+                        "description": "Time window in seconds (default: 300)",
+                        "name": "duration",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of events to return (default: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/programs": {
+            "get": {
+                "description": "Returns information about all currently registered and running eBPF programs",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "programs"
+                ],
+                "summary": "List active eBPF programs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.ProgramsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns the health status of the eBPF server and active programs",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "405": {
+                        "description": "Method Not Allowed",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.ConnectionSummaryRequest": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "example": "curl"
+                },
+                "duration": {
+                    "type": "integer",
+                    "example": 60
+                },
+                "pid": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "process_name": {
+                    "type": "string",
+                    "example": "curl"
+                }
+            }
+        },
+        "api.ConnectionSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "example": "curl"
+                },
+                "duration": {
+                    "type": "integer",
+                    "example": 60
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Found 42 connection attempts in the last 60 seconds"
+                },
+                "pid": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "total_attempts": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ProgramInfo": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "Monitors network connection attempts"
+                },
+                "event_count": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "name": {
+                    "type": "string",
+                    "example": "connection"
+                },
+                "running": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.ProgramsResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "2 eBPF programs currently active"
+                },
+                "programs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.ProgramInfo"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        }
+    },
+    "tags": [
+        {
+            "description": "Health check and system status endpoints",
+            "name": "health"
+        },
+        {
+            "description": "Network connection monitoring endpoints",
+            "name": "connections"
+        },
+        {
+            "description": "Packet drop monitoring endpoints",
+            "name": "packet_drops"
+        },
+        {
+            "description": "eBPF program management and information endpoints",
+            "name": "programs"
+        },
+        {
+            "description": "Event querying and retrieval endpoints",
+            "name": "events"
+        }
+    ]
+}

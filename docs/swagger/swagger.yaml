@@ -1,0 +1,223 @@
+basePath: /
+definitions:
+  api.ConnectionSummaryRequest:
+    properties:
+      command:
+        example: curl
+        type: string
+      duration:
+        example: 60
+        type: integer
+      pid:
+        example: 1234
+        type: integer
+      process_name:
+        example: curl
+        type: string
+    type: object
+  api.ConnectionSummaryResponse:
+    properties:
+      command:
+        example: curl
+        type: string
+      duration:
+        example: 60
+        type: integer
+      message:
+        example: Found 42 connection attempts in the last 60 seconds
+        type: string
+      pid:
+        example: 1234
+        type: integer
+      total_attempts:
+        example: 42
+        type: integer
+    type: object
+  api.ErrorResponse:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  api.ProgramInfo:
+    properties:
+      description:
+        example: Monitors network connection attempts
+        type: string
+      event_count:
+        example: 1234
+        type: integer
+      name:
+        example: connection
+        type: string
+      running:
+        example: true
+        type: boolean
+    type: object
+  api.ProgramsResponse:
+    properties:
+      message:
+        example: 2 eBPF programs currently active
+        type: string
+      programs:
+        items:
+          $ref: '#/definitions/api.ProgramInfo'
+        type: array
+      total:
+        example: 2
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@example.com
+    name: API Support
+    url: https://github.com/srodi/ebpf-server/issues
+  description: |-
+    A modular HTTP API server that uses eBPF to monitor network connections with an extensible plugin architecture.
+
+    ## Features
+    - **Plugin-style eBPF Programs**: Independent, hot-swappable monitoring modules
+    - **Event Storage**: Unified event collection and querying across all programs
+    - **Manager-based Lifecycle**: Centralized program registration and management
+    - **Auto-generated Documentation**: This documentation is generated from code annotations
+
+    ## Adding New Programs
+    New eBPF monitoring programs can be added by implementing the `BPFProgram` interface.
+    See the [Program Development Guide](https://github.com/srodi/ebpf-server/blob/main/docs/program-development.md) for detailed instructions.
+
+    ## Authentication
+    This API currently does not require authentication. Consider adding authentication for production deployments.
+  license:
+    name: MIT
+    url: https://github.com/srodi/ebpf-server/blob/main/LICENSE
+  title: eBPF Network Monitor API
+  version: "1.0"
+paths:
+  /api/connection-summary:
+    post:
+      consumes:
+      - application/json
+      description: Returns the count of connection events within a specified time
+        window, filtered by PID or command
+      parameters:
+      - description: Connection summary request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.ConnectionSummaryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ConnectionSummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Get connection event statistics
+      tags:
+      - connections
+  /api/events:
+    get:
+      description: Returns events from all eBPF programs with optional filtering by
+        PID, command, event type, and time window
+      parameters:
+      - description: Process ID to filter by
+        in: query
+        name: pid
+        type: integer
+      - description: Command name to filter by
+        in: query
+        name: command
+        type: string
+      - description: Event type to filter by (e.g., 'connection', 'packet_drop')
+        in: query
+        name: event_type
+        type: string
+      - default: 300
+        description: 'Time window in seconds (default: 300)'
+        in: query
+        name: duration
+        type: integer
+      - default: 100
+        description: 'Maximum number of events to return (default: 100)'
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Query events across all programs
+      tags:
+      - events
+  /api/programs:
+    get:
+      description: Returns information about all currently registered and running
+        eBPF programs
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.ProgramsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: List active eBPF programs
+      tags:
+      - programs
+  /health:
+    get:
+      description: Returns the health status of the eBPF server and active programs
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Health check
+      tags:
+      - health
+swagger: "2.0"
+tags:
+- description: Health check and system status endpoints
+  name: health
+- description: Network connection monitoring endpoints
+  name: connections
+- description: Packet drop monitoring endpoints
+  name: packet_drops
+- description: eBPF program management and information endpoints
+  name: programs
+- description: Event querying and retrieval endpoints
+  name: events

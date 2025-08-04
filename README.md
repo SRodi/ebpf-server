@@ -1,53 +1,205 @@
 # eBPF Network Monitor
 
-An HTTP API server that uses eBPF to monitor network connections and provide real-time network analytics.
+[![API Documentation](https://img.shields.io/badge/API-Documentation-blue?style=for-the-badge&logo=swagger)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger.json)
+[![OpenAPI Spec](https://img.shields.io/badge/OpenAPI-3.0-green?style=for-the-badge&logo=openapiinitiative)](docs/swagger.json)
+[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=for-the-badge&logo=go)](https://golang.org)
 
-## Overview
+A modular HTTP API server that uses eBPF to monitor network connections with an extensible plugin architecture.
 
-This project implements an HTTP API server that leverages eBPF (Extended Berkeley Packet Filter) technology to monitor network connections at the kernel level. It provides **RESTful endpoints** to retrieve connection statistics and network metrics, making it easy to integrate with monitoring systems, dashboards, and automation tools.
+## Quick Start
 
-## Features
+```bash
+# Install dependencies (Ubuntu/Debian)
+sudo apt install -y golang-go clang libbpf-dev linux-headers-$(uname -r)
 
-- **eBPF-based Network Monitoring**: Efficient kernel-level network connection tracking
-- **REST API**: Simple HTTP endpoints for easy integration
-- **Real-time Analytics**: Live network connection statistics and metrics  
-- **Low Overhead**: Minimal performance impact using eBPF technology
-- **JSON Responses**: Structured data with human-readable messages
-- **Protocol Detection**: Intelligent identification of TCP/UDP protocols by port
+# Build and run
+make build
+sudo ./bin/ebpf-server
+
+# Test the API
+curl http://localhost:8080/health
+curl http://localhost:8080/api/connections/summary?pid=1234&duration=60
+```
 
 ## Architecture
 
+This project implements a **modular eBPF monitoring system** with:
+
+- **Plugin-style eBPF Programs**: Independent, hot-swappable monitoring modules
+- **REST API**: Auto-documented endpoints with OpenAPI support  
+- **Manager-based Lifecycle**: Centralized program registration and management
+- **Event Storage**: Unified event collection and querying
+
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   HTTP Client   │───▶│ HTTP API Server │───▶│  eBPF Programs  │
-│ (curl, apps,    │    │     (REST)      │    │   (Kernel)      │
-│  monitoring)    │    │                 │    │                 │
+│   HTTP Client   │───▶│ HTTP API Server │───▶│  eBPF Manager   │
+│ (monitoring)    │    │ (Auto-documented)│    │   (Plugins)     │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
+                                                        │
+                       ┌─────────────────────────────────┼─────────────────┐
+                       │                                 │                 │
+                ┌──────▼──────┐                 ┌────────▼────────┐       ┌─▼─┐
+                │ Connection  │                 │  Packet Drop    │       │...│
+                │  Monitor    │                 │   Monitor       │       └───┘
+                └─────────────┘                 └─────────────────┘
 ```
 
-The server consists of:
-- **eBPF Programs** (`bpf/`): Kernel-space programs for network monitoring
-- **HTTP API** (`internal/api/`): RESTful endpoints for connection analysis
-- **eBPF Loader** (`internal/bpf/`): Go bindings for eBPF program management
-- **HTTP Server** (`cmd/server/`): Main server with routing and middleware
+## Adding New eBPF Programs
 
-## Prerequisites
+### 1. Create Program Package
 
-### System Requirements
-- Linux kernel 4.18+ (for eBPF support)
-- Root privileges (required for eBPF programs)
-
-### Development Dependencies
-- Go 1.23.0 or later
-- Clang (for compiling eBPF programs)
-- libbpf development headers
-
-### Install Dependencies
-
-**Ubuntu/Debian:**
 ```bash
-sudo apt update
-sudo apt install -y golang-go clang libbpf-dev linux-headers-$(uname -r)
+mkdir -p internal/bpf/programs/your_program
+```
+
+### 2. Implement the BPFProgram Interface
+
+```go
+// internal/bpf/programs/your_program/program.go
+package your_program
+
+import (
+    "context"
+    "github.com/srodi/ebpf-server/internal/bpf"
+)
+
+type Program struct {
+    // Your program implementation
+}
+
+func NewProgram(storage bpf.EventStorage) *Program {
+    return &Program{
+        // Initialize your program
+    }
+}
+
+// Implement bpf.BPFProgram interface methods:
+func (p *Program) GetName() string { return "your_program" }
+func (p *Program) GetDescription() string { return "Your program description" }
+func (p *Program) GetObjectPath() string { return "bpf/your_program.o" }
+func (p *Program) Load() error { /* Load eBPF bytecode */ }
+func (p *Program) Attach() error { /* Attach to kernel hooks */ }
+func (p *Program) Start(ctx context.Context) error { /* Start event processing */ }
+func (p *Program) Stop() error { /* Clean up resources */ }
+// ... other required methods
+```
+
+### 3. Create Event Type
+
+```go
+// internal/bpf/programs/your_program/event.go
+package your_program
+
+import (
+    "github.com/srodi/ebpf-server/internal/bpf"
+)
+
+type Event struct {
+    bpf.BaseEvent
+    // Your custom event fields
+    CustomField string `json:"custom_field"`
+}
+
+func (e *Event) GetEventType() string {
+    return "your_program"
+}
+
+// Implement any additional event methods
+```
+
+### 4. Register with Manager
+
+```go
+// Add to internal/bpf/loader.go registerDefaultPrograms() function
+func registerDefaultPrograms() error {
+    storage := globalManager.GetStorage()
+
+    // Existing programs...
+    
+    // Register your program
+    yourProg := your_program.NewProgram(storage)
+    if err := globalManager.RegisterProgram(yourProg); err != nil {
+        return fmt.Errorf("failed to register your_program: %w", err)
+    }
+
+    return nil
+}
+```
+
+### 5. Add API Endpoints (Optional)
+
+API endpoints are auto-generated, but you can add custom endpoints:
+
+```go
+// internal/api/handlers.go - Add custom handlers if needed
+func handleYourProgramSummary(w http.ResponseWriter, r *http.Request) {
+    // @Summary Get your program statistics
+    // @Description Returns event count and metrics for your program
+    // @Tags your_program
+    // @Produce json
+    // @Param pid query int false "Process ID"
+    // @Param duration query int true "Time window in seconds"
+    // @Success 200 {object} map[string]interface{}
+    // @Router /api/your_program/summary [get]
+    
+    // Implementation...
+}
+```
+
+## API Documentation
+
+The API is **self-documenting** using embedded OpenAPI annotations. Documentation is automatically generated from code.
+
+### 🌐 Interactive Documentation
+
+```bash
+# Start server
+sudo ./bin/ebpf-server
+
+# Access interactive docs
+open http://localhost:8080/docs
+```
+
+###  API Features
+
+- **Auto-Generated Documentation**: OpenAPI 3.0 spec generated from code annotations
+- **Interactive Testing**: Built-in Swagger UI for API exploration  
+- **Type Safety**: Strongly typed request/response models
+- **Error Handling**: Consistent error responses with helpful messages
+- **Flexible Filtering**: Query events by PID, command, type, and time windows
+
+## Development
+
+```bash
+# Development build with debug logging
+make build-dev
+sudo ./bin/ebpf-server-dev
+
+# Run tests
+make test
+
+# Generate API docs
+make docs
+```
+
+## Configuration
+
+Environment variables:
+- `PORT`: HTTP server port (default: 8080)
+- `LOG_LEVEL`: debug, info, warn, error (default: info)
+- `DOCS_ENABLED`: Enable API documentation endpoint (default: true)
+
+## Requirements
+
+- Linux kernel 4.18+ with eBPF support
+- Root privileges for eBPF program loading
+- Go 1.23.0+, Clang, libbpf-dev
+
+For detailed setup instructions, see [docs/setup.md](docs/setup.md).
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file.
 ```
 
 **CentOS/RHEL/Fedora:**
@@ -98,157 +250,6 @@ brew install go llvm
    ```bash
    sudo ./bin/ebpf-server -addr :9090
    ```
-
-## Usage
-
-### HTTP API Endpoints
-
-The server provides a REST API on port 8080 (default) with the following endpoints:
-
-#### GET /health
-
-Health check endpoint to verify the server is running.
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "service": "ebpf-server",
-  "version": "v1.0.0"
-}
-```
-
-#### POST /api/connection-summary
-
-Get connection attempt statistics for a specific process over a time period.
-
-**Important**: This endpoint captures `connect()` syscall attempts, not actual network latency. It counts how many times a process attempted to establish connections.
-
-**Request Body:**
-```json
-{
-  "pid": 1234,              // Process ID (optional, use either pid OR command)
-  "command": "curl",        // Command name (optional, use either pid OR command)
-  "duration": 60            // Duration in seconds (1-3600, required)
-}
-```
-
-**Response:**
-```json
-{
-  "total_attempts": 5,
-  "pid": 1234,
-  "command": "",
-  "duration": 60,
-  "message": "Found 5 connection attempts from PID 1234 over 60 seconds"
-}
-```
-
-#### GET /api/list-connections
-
-List all tracked connection events with optional query parameters.
-
-**Query Parameters:**
-- `pid` (integer, optional): Filter connections for specific Process ID
-- `limit` (integer, optional): Maximum connections to return per PID (default: 100, max: 1000)
-
-**Example:**
-```bash
-curl "http://localhost:8080/api/list-connections?pid=1234&limit=50"
-```
-
-#### POST /api/list-connections
-
-List all tracked connection events with JSON request body (alternative to GET).
-
-**Request Body:**
-```json
-{
-  "pid": 1234,    // Optional: Filter by PID
-  "limit": 100    // Optional: Limit results per PID
-}
-```
-
-**Response (both GET and POST):**
-```json
-{
-  "total_pids": 3,
-  "connections": {
-    "1234": [
-      {
-        "pid": 1234,
-        "command": "curl",
-        "destination": "93.184.216.34:80",
-        "protocol": "TCP",
-        "return_code": 0,
-        "timestamp": "2025-07-31T14:30:56Z"
-      }
-    ]
-  },
-  "truncated": false,
-  "message": "Found 1 total connections across 1 processes"
-}
-```
-
-#### GET /
-
-Service information and API documentation.
-
-**Response:**
-```json
-{
-  "service": "eBPF Network Monitor",
-  "version": "v1.0.0",
-  "description": "HTTP API for eBPF-based network connection monitoring",
-  "endpoints": {
-    "POST /api/connection-summary": "Get connection summary for a process",
-    "GET|POST /api/list-connections": "List network connections",
-    "GET /health": "Service health check"
-  }
-}
-```
-
-### Example Usage
-
-**Start the server:**
-```bash
-# Build and run (requires root for eBPF)
-sudo make run
-
-# Or run directly
-sudo ./bin/ebpf-server -addr :8080
-```
-
-**Test the API:**
-```bash
-# Check health
-curl http://localhost:8080/health
-
-# Get connection summary for a specific command
-curl -X POST http://localhost:8080/api/connection-summary \
-  -H "Content-Type: application/json" \
-  -d '{
-    "command": "curl",
-    "duration": 30
-  }'
-
-# List all connections
-curl http://localhost:8080/api/list-connections
-
-# List connections for specific PID with limit
-curl "http://localhost:8080/api/list-connections?pid=1234&limit=10"
-```
-
-**Integration with monitoring tools:**
-```bash
-# Use with Prometheus/monitoring
-curl -s http://localhost:8080/api/connection-summary \
-  -d '{"command":"nginx","duration":60}' | jq '.total_attempts'
-
-# Use with scripts
-CONNECTIONS=$(curl -s http://localhost:8080/api/list-connections | jq '.total_pids')
-echo "Currently tracking $CONNECTIONS processes"
-```
 
 ## Testing
 
@@ -453,28 +454,58 @@ make dev-setup
 
 ```
 .
-├── bpf/                    # eBPF programs (C)
-│   └── connection.c        # Connection monitoring eBPF program
+├── bpf/                           # eBPF programs (C)
+│   ├── connection.c               # Connection monitoring eBPF program
+│   └── packet_drop.c              # Packet drop monitoring eBPF program
 ├── cmd/
-│   └── server/
-│       ├── main.go        # Application entry point
-│       └── debug.go       # Debug build configuration
+│   └── server/                    # HTTP server application
+│       ├── main.go                # Application entry point
+│       ├── main_test.go           # Server integration tests
+│       └── debug.go               # Debug build configuration
+├── docs/                          # Documentation
+│   ├── setup.md                   # Installation and setup guide
+│   ├── program-development.md     # Guide for adding new eBPF programs
+│   └── swagger/                   # Auto-generated API documentation
+│       ├── docs.go                # Generated Go bindings
+│       ├── swagger.json           # OpenAPI 3.0 specification
+│       └── swagger.yaml           # OpenAPI 3.0 specification (YAML)
 ├── internal/
-│   ├── api/               # HTTP API handlers and routes
-│   │   ├── handlers.go    # HTTP request handlers
-│   │   └── handlers_test.go # API handler unit tests
-│   └── bpf/               # eBPF program loader and utilities
-│       ├── loader.go      # eBPF program loading logic
-│       ├── types.go       # eBPF data structures
-│       └── types_test.go  # BPF types unit tests
+│   ├── api/                       # HTTP API layer
+│   │   ├── docs.go                # API documentation metadata
+│   │   ├── handlers.go            # HTTP request handlers with OpenAPI annotations
+│   │   └── handlers_test.go       # API handler unit tests
+│   └── bpf/                       # eBPF management layer
+│       ├── interfaces.go          # Core interfaces (BPFProgram, EventStorage, Manager)
+│       ├── manager.go             # Program lifecycle management
+│       ├── manager_test.go        # Manager unit tests
+│       ├── storage.go             # Event storage implementation
+│       ├── storage_test.go        # Storage unit tests
+│       ├── loader.go              # eBPF program loading logic
+│       ├── loader_test.go         # Loader unit tests
+│       ├── base.go                # Base event implementation
+│       ├── types.go               # eBPF data structures and utilities
+│       ├── types_test.go          # Type conversion unit tests
+│       ├── mock_test.go           # Test mocks and utilities
+│       ├── integration_test.go    # Integration tests
+│       ├── benchmark_test.go      # Performance benchmarks
+│       └── programs/              # Modular eBPF program implementations
+│           ├── connection/        # Connection monitoring plugin
+│           │   ├── program.go     # Program implementation
+│           │   ├── event.go       # Event type definition
+│           │   └── connection_test.go # Program tests
+│           └── packet_drop/       # Packet drop monitoring plugin
+│               ├── program.go     # Program implementation
+│               ├── event.go       # Event type definition
+│               └── packet_drop_test.go # Program tests
 ├── pkg/
-│   └── logger/            # Custom logging package
-│       ├── logger.go      # Logger implementation
-│       └── logger_test.go # Logger unit tests
-├── go.mod                 # Go module definition
-├── go.sum                 # Go module checksums
-├── Makefile              # Build automation
-└── README.md             # This file
+│   └── logger/                    # Custom logging package
+│       ├── logger.go              # Logger implementation
+│       └── logger_test.go         # Logger unit tests
+├── ARCHITECTURE.md                # Detailed architecture documentation
+├── go.mod                         # Go module definition
+├── go.sum                         # Go module checksums
+├── Makefile                       # Build automation
+└── README.md                      # This file
 ```
 
 ## Troubleshooting

@@ -12,6 +12,9 @@ import (
 	"github.com/srodi/ebpf-server/internal/api"
 	"github.com/srodi/ebpf-server/internal/bpf"
 	"github.com/srodi/ebpf-server/pkg/logger"
+	
+	httpSwagger "github.com/swaggo/http-swagger"
+	_ "github.com/srodi/ebpf-server/docs/swagger" // Import generated docs
 )
 
 func main() {
@@ -47,6 +50,13 @@ func main() {
 	mux.HandleFunc("/api/list-connections", api.HandleListConnections)
 	mux.HandleFunc("/api/list-packet-drops", api.HandleListPacketDrops)
 	mux.HandleFunc("/health", api.HandleHealth)
+	
+	// New auto-generated API endpoints
+	mux.HandleFunc("/api/programs", api.HandlePrograms)
+	mux.HandleFunc("/api/events", api.HandleEvents)
+	
+	// Swagger documentation
+	mux.HandleFunc("/docs/", httpSwagger.WrapHandler)
 
 	// Root endpoint with service information
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -66,9 +76,15 @@ func main() {
 				"POST /api/packet-drop-summary": "Get packet drop summary for a process",
 				"GET|POST /api/list-connections": "List network connections",
 				"GET|POST /api/list-packet-drops": "List packet drops",
+				"GET /api/programs": "List active eBPF programs",
+				"GET /api/events": "Get filtered events",
 				"GET /health": "Service health check"
 			},
-			"documentation": "See README.md for detailed API usage"
+			"documentation": {
+				"api": "/docs/",
+				"swagger_json": "/docs/swagger.json",
+				"swagger_yaml": "/docs/swagger.yaml"
+			}
 		}`))
 	})
 

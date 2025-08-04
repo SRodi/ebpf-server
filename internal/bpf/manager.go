@@ -220,12 +220,22 @@ func (m *Manager) StopAll() error {
 func (m *Manager) GetProgram(name string) (BPFProgram, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
+	
 	program, exists := m.programs[name]
 	return program, exists
 }
 
-// ListPrograms returns a list of all registered program names
+// GetPrograms returns a copy of all registered programs
+func (m *Manager) GetPrograms() map[string]BPFProgram {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	result := make(map[string]BPFProgram)
+	for name, program := range m.programs {
+		result[name] = program
+	}
+	return result
+}// ListPrograms returns a list of all registered program names
 func (m *Manager) ListPrograms() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
