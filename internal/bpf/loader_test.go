@@ -48,8 +48,12 @@ func TestLoaderBackwardCompatibility(t *testing.T) {
 		connectionWrapper := &connectionProgramWrapper{storage: storage}
 		dropWrapper := &packetDropProgramWrapper{storage: storage}
 
-		globalManager.RegisterProgram(connectionWrapper)
-		globalManager.RegisterProgram(dropWrapper)
+		if err := globalManager.RegisterProgram(connectionWrapper); err != nil {
+			t.Fatalf("Failed to register connection program: %v", err)
+		}
+		if err := globalManager.RegisterProgram(dropWrapper); err != nil {
+			t.Fatalf("Failed to register drop program: %v", err)
+		}
 
 		// Store some test events
 		now := time.Now()
@@ -76,8 +80,13 @@ func TestLoaderBackwardCompatibility(t *testing.T) {
 		}
 
 		// Store events through the wrappers
-		connectionWrapper.storage.Store(&connectionEventWrapper{Event: *connEvent})
-		dropWrapper.storage.Store(&packetDropEventWrapper{DropEvent: *dropEvent})
+		// Store test events
+		if err := connectionWrapper.storage.Store(&connectionEventWrapper{Event: *connEvent}); err != nil {
+			t.Fatalf("Failed to store connection event: %v", err)
+		}
+		if err := dropWrapper.storage.Store(&packetDropEventWrapper{DropEvent: *dropEvent}); err != nil {
+			t.Fatalf("Failed to store drop event: %v", err)
+		}
 
 		// Test the backward compatibility functions
 		connSummary := GetConnectionSummary(1234, "", 60)

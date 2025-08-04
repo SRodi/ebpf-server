@@ -27,6 +27,9 @@ type Manager struct {
 	// Cleanup
 	cleanupTicker *time.Ticker
 	cleanupDone   chan struct{}
+	
+	// Aggregation synchronization
+	aggregationDone chan struct{}
 }
 
 // NewManager creates a new BPF program manager
@@ -142,6 +145,7 @@ func (m *Manager) StartAll() error {
 	go m.cleanupRoutine()
 
 	// Start event aggregation
+	m.aggregationDone = make(chan struct{})
 	go m.aggregateEvents()
 
 	m.mu.RLock()
@@ -174,7 +178,7 @@ func (m *Manager) StopAll() error {
 		return nil
 	}
 
-	// Cancel context to stop all programs
+	// Cancel context to stop all programs and goroutines
 	if m.cancel != nil {
 		m.cancel()
 	}
@@ -206,6 +210,11 @@ func (m *Manager) StopAll() error {
 	}
 
 	m.running = false
+
+	// Wait for aggregation goroutine to finish before closing channel
+	if m.aggregationDone != nil {
+		<-m.aggregationDone
+	}
 	close(m.eventChan)
 
 	if len(errors) > 0 {
@@ -283,6 +292,7 @@ func (m *Manager) GetStorage() EventStorage {
 // aggregateEvents collects events from all programs and forwards them
 func (m *Manager) aggregateEvents() {
 	logger.Info("Starting event aggregation...")
+	defer close(m.aggregationDone) // Signal when done
 
 	// Create a map to track program event channels
 	programChannels := make(map[string]<-chan BPFEvent)

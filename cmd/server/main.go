@@ -67,7 +67,7 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		if _, err := w.Write([]byte(`{
 			"service": "eBPF Network Monitor",
 			"version": "v1.0.0",
 			"description": "HTTP API for eBPF-based network connection and packet drop monitoring",
@@ -85,7 +85,9 @@ func main() {
 				"swagger_json": "/docs/swagger.json",
 				"swagger_yaml": "/docs/swagger.yaml"
 			}
-		}`))
+		}`)); err != nil {
+			logger.Error("Failed to write health response", "error", err)
+		}
 	})
 
 	logger.Infof("Starting eBPF Network Monitor HTTP API on %s...", *httpAddr)

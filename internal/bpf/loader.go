@@ -716,7 +716,9 @@ func LoadAndAttach() error {
 // Cleanup stops all programs and cleans up resources
 func Cleanup() {
 	if globalManager != nil {
-		globalManager.StopAll()
+		if err := globalManager.StopAll(); err != nil {
+			logger.Error("Failed to stop eBPF programs", "error", err)
+		}
 		logger.Info("eBPF cleanup complete")
 	}
 }

@@ -113,7 +113,9 @@ func TestInMemoryStorage(t *testing.T) {
 			BaseEvent: BaseEvent{PID: 9999, TS: oldTimestamp, Comm: [16]byte{'o', 'l', 'd'}},
 			eventType: "old_type",
 		}
-		storage.Store(oldEvent)
+		if err := storage.Store(oldEvent); err != nil {
+			t.Fatalf("Failed to store old event: %v", err)
+		}
 
 		// Cleanup events older than 1 hour
 		removed := storage.Cleanup(1 * time.Hour)
@@ -149,8 +151,12 @@ func TestStorageTimeFiltering(t *testing.T) {
 		eventType: "test",
 	}
 
-	storage.Store(recentEvent)
-	storage.Store(oldEvent)
+	if err := storage.Store(recentEvent); err != nil {
+		t.Fatalf("Failed to store recent event: %v", err)
+	}
+	if err := storage.Store(oldEvent); err != nil {
+		t.Fatalf("Failed to store old event: %v", err)
+	}
 
 	t.Run("Filter by time window", func(t *testing.T) {
 		// Get events from last hour (should only include recent event)

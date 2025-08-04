@@ -190,8 +190,12 @@ func TestStorageCleanup(t *testing.T) {
 			eventType: "new_test",
 		}
 
-		storage.Store(oldEvent)
-		storage.Store(recentEvent)
+		if err := storage.Store(oldEvent); err != nil {
+			t.Fatalf("Failed to store old event: %v", err)
+		}
+		if err := storage.Store(recentEvent); err != nil {
+			t.Fatalf("Failed to store recent event: %v", err)
+		}
 
 		// Verify both events are stored
 		if storage.Count(0, "", "", time.Time{}) != 2 {
@@ -210,12 +214,18 @@ func TestStorageCleanup(t *testing.T) {
 		}
 
 		// Verify it's the correct event
-		newEvents, _ := storage.GetByType("new_test", time.Time{})
+		newEvents, err := storage.GetByType("new_test", time.Time{})
+		if err != nil {
+			t.Fatalf("Failed to get new_test events: %v", err)
+		}
 		if len(newEvents) != 1 {
 			t.Error("Expected new event to remain after cleanup")
 		}
 
-		oldEvents, _ := storage.GetByType("old_test", time.Time{})
+		oldEvents, err := storage.GetByType("old_test", time.Time{})
+		if err != nil {
+			t.Fatalf("Failed to get old_test events: %v", err)
+		}
 		if len(oldEvents) != 0 {
 			t.Error("Expected old event to be removed after cleanup")
 		}
@@ -249,7 +259,9 @@ func TestErrorScenarios(t *testing.T) {
 
 		// Set program to fail at attach stage
 		program.SetErrors(nil, ErrProgramNotLoaded, nil)
-		manager.RegisterProgram(program)
+		if err := manager.RegisterProgram(program); err != nil {
+			t.Fatalf("Failed to register program: %v", err)
+		}
 
 		// Load should succeed
 		if err := manager.LoadAll(); err != nil {
