@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+	
+	"github.com/srodi/ebpf-server/pkg/logger"
 )
 
 // Test errors
@@ -115,7 +117,10 @@ func (p *MockProgram) SetErrors(loadErr, attachErr, startErr error) {
 func (p *MockProgram) SendEvent(event BPFEvent) {
 	// Store the event (like real programs do)
 	if p.storage != nil {
-		p.storage.Store(event)
+		if err := p.storage.Store(event); err != nil {
+			// In tests, we can just log this error since it's not critical
+			logger.Debugf("Failed to store mock event: %v", err)
+		}
 	}
 	
 	// Send to channel for aggregation

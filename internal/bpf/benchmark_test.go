@@ -23,7 +23,9 @@ func BenchmarkEventStorage(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			storage.Store(events[i])
+			if err := storage.Store(events[i]); err != nil {
+				b.Fatalf("Failed to store event %d: %v", i, err)
+			}
 		}
 	})
 
@@ -40,7 +42,9 @@ func BenchmarkEventStorage(b *testing.B) {
 			},
 			eventType: fmt.Sprintf("type_%d", i%5),
 		}
-		storage.Store(event)
+		if err := storage.Store(event); err != nil {
+			b.Fatalf("Failed to store event: %v", err)
+		}
 	}
 
 	b.Run("Count by PID", func(b *testing.B) {
@@ -71,7 +75,7 @@ func BenchmarkEventStorage(b *testing.B) {
 		since := time.Now().Add(-1 * time.Hour)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			storage.GetByPID(uint32(i%100), since)
+			_, _ = storage.GetByPID(uint32(i%100), since)
 		}
 	})
 
@@ -79,7 +83,7 @@ func BenchmarkEventStorage(b *testing.B) {
 		since := time.Now().Add(-1 * time.Hour)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			storage.GetByType(fmt.Sprintf("type_%d", i%5), since)
+			_, _ = storage.GetByType(fmt.Sprintf("type_%d", i%5), since)
 		}
 	})
 
@@ -89,11 +93,13 @@ func BenchmarkEventStorage(b *testing.B) {
 			oldEvent := &MockEvent{
 				BaseEvent: BaseEvent{
 					PID: uint32(i),
-					TS:  uint64(time.Now().Add(-2*time.Hour).UnixNano()),
+					TS:  uint64(time.Now().Add(-2 * time.Hour).UnixNano()),
 				},
 				eventType: "cleanup_test",
 			}
-			storage.Store(oldEvent)
+			if err := storage.Store(oldEvent); err != nil {
+				b.Fatalf("Failed to store cleanup event: %v", err)
+			}
 		}
 
 		b.ResetTimer()
@@ -107,7 +113,7 @@ func BenchmarkManager(b *testing.B) {
 	b.Run("Program registration", func(b *testing.B) {
 		manager := NewManager()
 		programs := make([]*MockProgram, b.N)
-		
+
 		for i := 0; i < b.N; i++ {
 			programs[i] = NewMockProgram(
 				fmt.Sprintf("program_%d", i),
@@ -118,18 +124,29 @@ func BenchmarkManager(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			manager.RegisterProgram(programs[i])
+			err := manager.RegisterProgram(programs[i])
+			if err != nil {
+				b.Fatalf("Failed to register program %d: %v", i, err)
+			}
 		}
 	})
 
 	b.Run("Event aggregation", func(b *testing.B) {
 		manager := NewManager()
 		program := NewMockProgram("bench", "Benchmark program", manager.GetStorage())
-		
-		manager.RegisterProgram(program)
-		manager.LoadAll()
-		manager.AttachAll()
-		manager.StartAll()
+
+		if err := manager.RegisterProgram(program); err != nil {
+			b.Fatalf("Failed to register program: %v", err)
+		}
+		if err := manager.LoadAll(); err != nil {
+			b.Fatalf("Failed to load all programs: %v", err)
+		}
+		if err := manager.AttachAll(); err != nil {
+			b.Fatalf("Failed to attach all programs: %v", err)
+		}
+		if err := manager.StartAll(); err != nil {
+			b.Fatalf("Failed to start all programs: %v", err)
+		}
 
 		events := make([]*MockEvent, b.N)
 		for i := 0; i < b.N; i++ {
@@ -163,7 +180,9 @@ func BenchmarkManager(b *testing.B) {
 
 		// Wait for all events to be processed
 		<-done
-		manager.StopAll()
+		if err := manager.StopAll(); err != nil {
+			b.Fatalf("Failed to stop all programs: %v", err)
+		}
 	})
 }
 
@@ -193,7 +212,7 @@ func BenchmarkEventProcessing(b *testing.B) {
 func BenchmarkMemoryUsage(b *testing.B) {
 	b.Run("Storage growth", func(b *testing.B) {
 		storage := NewInMemoryStorage()
-		
+
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			event := &MockEvent{
@@ -203,9 +222,9 @@ func BenchmarkMemoryUsage(b *testing.B) {
 				},
 				eventType: fmt.Sprintf("type_%d", i%10), // 10 types
 			}
-			storage.Store(event)
-			
-			// Periodic cleanup to prevent unlimited growth
+			if err := storage.Store(event); err != nil {
+				b.Fatalf("Failed to store event: %v", err)
+			} // Periodic cleanup to prevent unlimited growth
 			if i%10000 == 0 {
 				storage.Cleanup(10 * time.Minute)
 			}
@@ -216,7 +235,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 // Test concurrent access performance
 func BenchmarkConcurrentAccess(b *testing.B) {
 	storage := NewInMemoryStorage()
-	
+
 	// Pre-populate storage
 	for i := 0; i < 1000; i++ {
 		event := &MockEvent{
@@ -226,7 +245,9 @@ func BenchmarkConcurrentAccess(b *testing.B) {
 			},
 			eventType: fmt.Sprintf("type_%d", i%5),
 		}
-		storage.Store(event)
+		if err := storage.Store(event); err != nil {
+			b.Fatalf("Failed to store event: %v", err)
+		}
 	}
 
 	b.Run("Concurrent reads", func(b *testing.B) {
@@ -251,7 +272,9 @@ func BenchmarkConcurrentAccess(b *testing.B) {
 					},
 					eventType: "concurrent",
 				}
-				storage.Store(event)
+				if err := storage.Store(event); err != nil {
+					b.Fatalf("Failed to store event in concurrent write: %v", err)
+				}
 				i++
 			}
 		})
@@ -274,7 +297,9 @@ func BenchmarkConcurrentAccess(b *testing.B) {
 						},
 						eventType: "mixed",
 					}
-					storage.Store(event)
+					if err := storage.Store(event); err != nil {
+						b.Fatalf("Failed to store event in mixed operation: %v", err)
+					}
 				}
 				i++
 			}

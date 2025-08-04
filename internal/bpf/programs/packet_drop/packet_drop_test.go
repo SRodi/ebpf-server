@@ -137,7 +137,10 @@ func TestPacketDropProgram(t *testing.T) {
 			SkbLen:     1500,
 		}
 
-		storage.Store(event)
+		err := storage.Store(event)
+		if err != nil {
+			t.Fatalf("Failed to store event: %v", err)
+		}
 
 		// Test summary by PID
 		summary := program.GetSummary(1234, "", 60)

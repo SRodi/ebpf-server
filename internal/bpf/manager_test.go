@@ -58,7 +58,7 @@ func TestManager(t *testing.T) {
 	t.Run("Load, attach, and start programs", func(t *testing.T) {
 		manager := NewManager() // Fresh manager
 		program := NewMockProgram("test", "Test program", manager.GetStorage())
-		
+
 		if err := manager.RegisterProgram(program); err != nil {
 			t.Fatalf("Failed to register program: %v", err)
 		}
@@ -102,14 +102,16 @@ func TestManager(t *testing.T) {
 	t.Run("Error handling", func(t *testing.T) {
 		manager := NewManager()
 		program := NewMockProgram("test", "Test program", manager.GetStorage())
-		
+
 		// Set up program to fail at different stages
 		loadErr := errors.New("load failed")
 		attachErr := errors.New("attach failed")
 		startErr := errors.New("start failed")
-		
+
 		program.SetErrors(loadErr, attachErr, startErr)
-		manager.RegisterProgram(program)
+		if err := manager.RegisterProgram(program); err != nil {
+			t.Fatalf("Failed to register program: %v", err)
+		}
 
 		// Test load failure
 		if err := manager.LoadAll(); err == nil {
@@ -140,13 +142,26 @@ func TestManager(t *testing.T) {
 		program1 := NewMockProgram("test1", "Test program 1", manager.GetStorage())
 		program2 := NewMockProgram("test2", "Test program 2", manager.GetStorage())
 
-		manager.RegisterProgram(program1)
-		manager.RegisterProgram(program2)
+		if err := manager.RegisterProgram(program1); err != nil {
+			t.Fatalf("Failed to register program1: %v", err)
+		}
+
+		if err := manager.RegisterProgram(program2); err != nil {
+			t.Fatalf("Failed to register program2: %v", err)
+		}
 
 		// Load, attach, and start programs
-		manager.LoadAll()
-		manager.AttachAll()
-		manager.StartAll()
+		if err := manager.LoadAll(); err != nil {
+			t.Fatalf("Failed to load programs: %v", err)
+		}
+
+		if err := manager.AttachAll(); err != nil {
+			t.Fatalf("Failed to attach programs: %v", err)
+		}
+
+		if err := manager.StartAll(); err != nil {
+			t.Fatalf("Failed to start programs: %v", err)
+		}
 
 		// Create test events
 		event1 := &MockEvent{
@@ -164,7 +179,7 @@ func TestManager(t *testing.T) {
 
 		// Collect events from aggregated channel
 		aggregatedChan := manager.GetAggregatedEvents()
-		
+
 		receivedEvents := make([]BPFEvent, 0, 2)
 		timeout := time.After(2 * time.Second)
 
@@ -184,7 +199,9 @@ func TestManager(t *testing.T) {
 		}
 
 		// Stop manager
-		manager.StopAll()
+		if err := manager.StopAll(); err != nil {
+			t.Fatalf("Failed to stop manager: %v", err)
+		}
 	})
 
 	t.Run("IsAvailable", func(t *testing.T) {
@@ -199,12 +216,12 @@ func TestManager(t *testing.T) {
 
 func TestManagerConcurrency(t *testing.T) {
 	manager := NewManager()
-	
+
 	// Test concurrent program registration
 	t.Run("Concurrent registration", func(t *testing.T) {
 		const numPrograms = 10
 		done := make(chan bool, numPrograms)
-		
+
 		for i := 0; i < numPrograms; i++ {
 			go func(id int) {
 				program := NewMockProgram(
@@ -219,12 +236,12 @@ func TestManagerConcurrency(t *testing.T) {
 				done <- true
 			}(i)
 		}
-		
+
 		// Wait for all goroutines to complete
 		for i := 0; i < numPrograms; i++ {
 			<-done
 		}
-		
+
 		programs := manager.ListPrograms()
 		if len(programs) != numPrograms {
 			t.Errorf("Expected %d programs, got %d", numPrograms, len(programs))
@@ -236,57 +253,57 @@ func TestManagerLifecycle(t *testing.T) {
 	t.Run("Complete lifecycle", func(t *testing.T) {
 		manager := NewManager()
 		program := NewMockProgram("lifecycle", "Lifecycle test program", manager.GetStorage())
-		
+
 		// Register
 		if err := manager.RegisterProgram(program); err != nil {
 			t.Fatalf("Failed to register: %v", err)
 		}
-		
+
 		// Load
 		if err := manager.LoadAll(); err != nil {
 			t.Fatalf("Failed to load: %v", err)
 		}
-		
+
 		// Attach
 		if err := manager.AttachAll(); err != nil {
 			t.Fatalf("Failed to attach: %v", err)
 		}
-		
+
 		// Start
 		if err := manager.StartAll(); err != nil {
 			t.Fatalf("Failed to start: %v", err)
 		}
-		
+
 		// Verify running state
 		if !manager.running {
 			t.Error("Manager should be running")
 		}
-		
+
 		// Test double start (should fail)
 		if err := manager.StartAll(); err == nil {
 			t.Error("Expected error on double start")
 		}
-		
+
 		// Send some events
 		event := &MockEvent{
 			BaseEvent: BaseEvent{PID: 1111, TS: uint64(time.Now().UnixNano()), Comm: [16]byte{'t', 'e', 's', 't'}},
 			eventType: "lifecycle",
 		}
 		program.SendEvent(event)
-		
+
 		// Wait a bit for event processing
 		time.Sleep(100 * time.Millisecond)
-		
+
 		// Stop
 		if err := manager.StopAll(); err != nil {
 			t.Fatalf("Failed to stop: %v", err)
 		}
-		
+
 		// Verify stopped state
 		if manager.running {
 			t.Error("Manager should be stopped")
 		}
-		
+
 		// Test double stop (should be safe)
 		if err := manager.StopAll(); err != nil {
 			t.Errorf("Double stop should be safe: %v", err)

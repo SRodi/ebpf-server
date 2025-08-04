@@ -178,7 +178,10 @@ func TestConnectionProgram(t *testing.T) {
 			},
 		}
 
-		storage.Store(event)
+		err := storage.Store(event)
+		if err != nil {
+			t.Fatalf("Failed to store event: %v", err)
+		}
 
 		// Test summary
 		summary := program.GetSummary(1234, "", 60)
