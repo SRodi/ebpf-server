@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net"
 	"time"
-	"unsafe"
 )
 
+// Connection event structure (existing)
 type Event struct {
 	PID      uint32   `json:"pid"`
 	TS       uint64   `json:"timestamp_ns"`
@@ -22,9 +22,25 @@ type Event struct {
 	Padding  uint16   `json:"-"`
 }
 
+// Packet drop event structure (new)
+// Must match the C struct layout which is __attribute__((packed))
+type DropEvent struct {
+	PID        uint32   `json:"pid"`
+	TS         uint64   `json:"timestamp_ns"`
+	Comm       [16]byte `json:"-"`
+	DropReason uint32   `json:"drop_reason"`
+	SkbLen     uint32   `json:"skb_length"`
+	Padding    [8]byte  `json:"-"`
+}
+
 // GetCommand returns the command name as a string
 func (e *Event) GetCommand() string {
-	return string((*(*[16]byte)(unsafe.Pointer(&e.Comm[0])))[:clen(e.Comm[:])])
+	// Convert the byte array to a null-terminated string
+	cmd := make([]byte, 0, 16)
+	for i := 0; i < len(e.Comm) && e.Comm[i] != 0; i++ {
+		cmd = append(cmd, e.Comm[i])
+	}
+	return string(cmd)
 }
 
 // GetDestIP returns the destination IP as a string
@@ -110,9 +126,10 @@ func (e *Event) GetTime() time.Time {
 
 // GetWallClockTime converts eBPF timestamp to wall clock time using system boot time
 func (e *Event) GetWallClockTime() time.Time {
-	// Convert eBPF timestamp (nanoseconds since boot) to wall clock time
-	// This requires access to the systemBootTime from loader.go
-	return GetSystemBootTime().Add(time.Duration(e.TS) * time.Nanosecond)
+	// eBPF timestamp is nanoseconds since boot, convert to wall clock time
+	bootTime := GetSystemBootTime()
+	eventTime := bootTime.Add(time.Duration(e.TS))
+	return eventTime
 }
 
 // EventJSON is used for JSON serialization with human-readable fields
@@ -149,12 +166,60 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// clen finds the length of a null-terminated C string
-func clen(b []byte) int {
-	for i := 0; i < len(b); i++ {
-		if b[i] == 0 {
-			return i
-		}
+// DropEvent getter methods
+
+// GetCommand returns the command name as a string
+func (e *DropEvent) GetCommand() string {
+	// Convert the byte array to a null-terminated string
+	cmd := make([]byte, 0, 16)
+	for i := 0; i < len(e.Comm) && e.Comm[i] != 0; i++ {
+		cmd = append(cmd, e.Comm[i])
 	}
-	return len(b)
+	return string(cmd)
+}
+
+// GetWallClockTime converts eBPF timestamp to wall clock time using system boot time
+func (e *DropEvent) GetWallClockTime() time.Time {
+	// eBPF timestamp is nanoseconds since boot, convert to wall clock time
+	bootTime := GetSystemBootTime()
+	eventTime := bootTime.Add(time.Duration(e.TS))
+	return eventTime
+}
+
+// GetDropReasonString returns a human-readable drop reason
+func (e *DropEvent) GetDropReasonString() string {
+	switch e.DropReason {
+	case 1:
+		return "SKB_FREE"
+	case 2:
+		return "TCP_DROP"
+	default:
+		return fmt.Sprintf("UNKNOWN(%d)", e.DropReason)
+	}
+}
+
+// DropEventJSON is used for JSON serialization with human-readable fields
+type DropEventJSON struct {
+	PID           uint32 `json:"pid"`
+	Timestamp     uint64 `json:"timestamp_ns"`
+	Command       string `json:"command"`
+	DropReason    uint32 `json:"drop_reason_code"`
+	DropReasonStr string `json:"drop_reason"`
+	SkbLength     uint32 `json:"skb_length"`
+	WallTime      string `json:"wall_time"`
+	Note          string `json:"note"`
+}
+
+// MarshalJSON implements custom JSON marshaling for DropEvent
+func (e *DropEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(DropEventJSON{
+		PID:           e.PID,
+		Timestamp:     e.TS,
+		Command:       e.GetCommand(),
+		DropReason:    e.DropReason,
+		DropReasonStr: e.GetDropReasonString(),
+		SkbLength:     e.SkbLen,
+		WallTime:      e.GetWallClockTime().Format(time.RFC3339),
+		Note:          "timestamp_ns is nanoseconds since boot, wall_time is converted to UTC",
+	})
 }

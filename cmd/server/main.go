@@ -43,7 +43,9 @@ func main() {
 
 	// API endpoints
 	mux.HandleFunc("/api/connection-summary", api.HandleConnectionSummary)
+	mux.HandleFunc("/api/packet-drop-summary", api.HandlePacketDropSummary)
 	mux.HandleFunc("/api/list-connections", api.HandleListConnections)
+	mux.HandleFunc("/api/list-packet-drops", api.HandleListPacketDrops)
 	mux.HandleFunc("/health", api.HandleHealth)
 
 	// Root endpoint with service information
@@ -58,10 +60,12 @@ func main() {
 		w.Write([]byte(`{
 			"service": "eBPF Network Monitor",
 			"version": "v1.0.0",
-			"description": "HTTP API for eBPF-based network connection monitoring",
+			"description": "HTTP API for eBPF-based network connection and packet drop monitoring",
 			"endpoints": {
 				"POST /api/connection-summary": "Get connection summary for a process",
+				"POST /api/packet-drop-summary": "Get packet drop summary for a process",
 				"GET|POST /api/list-connections": "List network connections",
+				"GET|POST /api/list-packet-drops": "List packet drops",
 				"GET /health": "Service health check"
 			},
 			"documentation": "See README.md for detailed API usage"
