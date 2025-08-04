@@ -4,10 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/cilium/ebpf"
@@ -17,291 +13,248 @@ import (
 	"github.com/srodi/ebpf-server/pkg/logger"
 )
 
-var (
-	// Program objects for multiple eBPF programs
-	connectionObjs struct {
-		Events *ebpf.Map
-	}
-	dropObjs struct {
-		DropEvents *ebpf.Map
-	}
+// Global manager instance
+var globalManager *Manager
 
-	// Links for all programs
-	connectionLinks []link.Link
-	dropLinks       []link.Link
-
-	// Connection tracking
-	connectionsMu sync.RWMutex
-	connections   = make(map[uint32][]Event) // PID -> []Event
-
-	// Packet drop tracking
-	dropsMu sync.RWMutex
-	drops   = make(map[uint32][]DropEvent) // PID -> []DropEvent
-
-	// Ring buffer readers
-	connectionReader *ringbuf.Reader
-	dropReader       *ringbuf.Reader
-
-	// Boot time for converting eBPF timestamps to wall clock time
-	systemBootTime time.Time
-
-	// Context for graceful shutdown of event processing
-	eventCtx    context.Context
-	eventCancel context.CancelFunc
-	eventDone   chan struct{}
-)
-
-// IsAvailable checks if eBPF is available on the current system
-func IsAvailable() bool {
-	// On macOS, eBPF is not available
-	if strings.Contains(strings.ToLower(os.Getenv("GOOS")), "darwin") {
-		logger.Info("eBPF is not available on macOS - running in mock mode")
-		return false
-	}
-
-	// Try to remove memory limit for eBPF - this will fail if not supported
-	if err := rlimit.RemoveMemlock(); err != nil {
-		logger.Infof("Failed to remove memory limit for eBPF: %v", err)
-		return false
-	}
-
-	// Check if we can access /sys/fs/bpf (BPF filesystem)
-	if _, err := os.Stat("/sys/fs/bpf"); os.IsNotExist(err) {
-		logger.Info("BPF filesystem not available")
-		return false
-	}
-
-	return true
+// connectionEventWrapper wraps the legacy Event type to implement BPFEvent
+type connectionEventWrapper struct {
+	Event
 }
 
-// calculateBootTimeOffset calculates the system boot time for timestamp conversion
-func calculateBootTimeOffset() {
-	// Read system uptime from /proc/uptime
-	data, err := os.ReadFile("/proc/uptime")
+func (e *connectionEventWrapper) GetEventType() string {
+	return "connection"
+}
+
+func (e *connectionEventWrapper) GetPID() uint32 {
+	return e.Event.PID
+}
+
+func (e *connectionEventWrapper) GetTimestamp() uint64 {
+	return e.Event.TS
+}
+
+func (e *connectionEventWrapper) GetWallClockTime() time.Time {
+	bootTime := GetSystemBootTime()
+	return bootTime.Add(time.Duration(e.Event.TS))
+}
+
+// packetDropEventWrapper wraps the legacy DropEvent type to implement BPFEvent
+type packetDropEventWrapper struct {
+	DropEvent
+}
+
+func (e *packetDropEventWrapper) GetEventType() string {
+	return "packet_drop"
+}
+
+func (e *packetDropEventWrapper) GetPID() uint32 {
+	return e.DropEvent.PID
+}
+
+func (e *packetDropEventWrapper) GetTimestamp() uint64 {
+	return e.DropEvent.TS
+}
+
+func (e *packetDropEventWrapper) GetWallClockTime() time.Time {
+	bootTime := GetSystemBootTime()
+	return bootTime.Add(time.Duration(e.DropEvent.TS))
+}
+
+// connectionProgram implements BPFProgram for connection monitoring
+type connectionProgram struct {
+	name        string
+	description string
+	objectPath  string
+	
+	// eBPF resources
+	collection *ebpf.Collection
+	eventsMap  *ebpf.Map
+	links      []link.Link
+	reader     *ringbuf.Reader
+	
+	// Event processing
+	eventChan chan BPFEvent
+	ctx       context.Context
+	cancel    context.CancelFunc
+	running   bool
+	
+	// Storage
+	storage EventStorage
+}
+
+func newConnectionProgram(storage EventStorage) *connectionProgram {
+	return &connectionProgram{
+		name:        "connection",
+		description: "Monitors network connection attempts via sys_enter_connect tracepoint",
+		objectPath:  "bpf/connection.o",
+		eventChan:   make(chan BPFEvent, 1000),
+		storage:     storage,
+	}
+}
+
+func (p *connectionProgram) GetName() string {
+	return p.name
+}
+
+func (p *connectionProgram) GetDescription() string {
+	return p.description
+}
+
+func (p *connectionProgram) GetObjectPath() string {
+	return p.objectPath
+}
+
+func (p *connectionProgram) Load() error {
+	spec, err := ebpf.LoadCollectionSpec(p.objectPath)
 	if err != nil {
-		logger.Infof("Could not read /proc/uptime: %v, using current time", err)
-		systemBootTime = time.Now()
-		return
+		return fmt.Errorf("failed to load collection spec: %w", err)
 	}
 
-	// Parse uptime (first number is seconds since boot)
-	uptimeStr := strings.Fields(string(data))[0]
-	uptime, err := strconv.ParseFloat(uptimeStr, 64)
+	collection, err := ebpf.NewCollection(spec)
 	if err != nil {
-		logger.Infof("Could not parse uptime: %v, using current time", err)
-		systemBootTime = time.Now()
-		return
+		return fmt.Errorf("failed to create collection: %w", err)
 	}
 
-	// Calculate boot time
-	systemBootTime = time.Now().Add(-time.Duration(uptime * float64(time.Second)))
+	p.collection = collection
+	p.eventsMap = collection.Maps["events"]
 
-	logger.Infof("System boot time calculated: %s", systemBootTime.Format("2006-01-02 15:04:05"))
-}
-
-// GetSystemBootTime returns the calculated system boot time
-func GetSystemBootTime() time.Time {
-	return systemBootTime
-}
-
-func LoadAndAttach() error {
-	if err := rlimit.RemoveMemlock(); err != nil {
-		return err
-	}
-
-	// Calculate boot time offset for timestamp conversion
-	calculateBootTimeOffset()
-
-	// Initialize context for graceful shutdown
-	eventCtx, eventCancel = context.WithCancel(context.Background())
-	eventDone = make(chan struct{})
-
-	// Load connection monitoring program
-	if err := loadConnectionProgram(); err != nil {
-		return fmt.Errorf("failed to load connection program: %w", err)
-	}
-
-	// Load packet drop monitoring program (optional)
-	if err := loadPacketDropProgram(); err != nil {
-		logger.Infof("Failed to load packet drop program: %v (continuing without it)", err)
-	}
-
-	// Start event processing goroutines
-	go processConnectionEvents()
-
-	// Start packet drop processing if available
-	if dropReader != nil {
-		go processPacketDropEvents()
-	}
-
-	logger.Info("eBPF programs attached successfully")
+	logger.Infof("Connection monitoring program loaded from %s", p.objectPath)
 	return nil
 }
 
-// loadConnectionProgram loads the connection monitoring eBPF program
-func loadConnectionProgram() error {
-	spec, err := ebpf.LoadCollectionSpec("bpf/connection.o")
-	if err != nil {
-		return err
+func (p *connectionProgram) Attach() error {
+	if p.collection == nil {
+		return fmt.Errorf("program not loaded")
 	}
 
-	coll, err := ebpf.NewCollection(spec)
-	if err != nil {
-		return err
+	prog := p.collection.Programs["trace_connect"]
+	if prog == nil {
+		return fmt.Errorf("trace_connect program not found in collection")
 	}
 
-	connectionObjs.Events = coll.Maps["events"]
-
-	tp, err := link.Tracepoint("syscalls", "sys_enter_connect", coll.Programs["trace_connect"], nil)
+	tp, err := link.Tracepoint("syscalls", "sys_enter_connect", prog, nil)
 	if err != nil {
-		coll.Close()
-		return err
+		return fmt.Errorf("failed to attach tracepoint: %w", err)
 	}
 
-	connectionLinks = append(connectionLinks, tp)
+	p.links = append(p.links, tp)
 
-	// Start reading from ring buffer
-	connectionReader, err = ringbuf.NewReader(connectionObjs.Events)
+	reader, err := ringbuf.NewReader(p.eventsMap)
 	if err != nil {
 		tp.Close()
-		coll.Close()
-		return err
+		return fmt.Errorf("failed to create ring buffer reader: %w", err)
 	}
 
-	logger.Info("Connection monitoring eBPF program attached to sys_enter_connect")
+	p.reader = reader
+	logger.Info("Connection monitoring program attached to sys_enter_connect tracepoint")
 	return nil
 }
 
-// loadPacketDropProgram loads the packet drop monitoring eBPF program
-func loadPacketDropProgram() error {
-	spec, err := ebpf.LoadCollectionSpec("bpf/packet_drop.o")
-	if err != nil {
-		return err
+func (p *connectionProgram) Start(ctx context.Context) error {
+	if p.reader == nil {
+		return fmt.Errorf("program not attached")
 	}
 
-	coll, err := ebpf.NewCollection(spec)
-	if err != nil {
-		return err
+	if p.running {
+		return fmt.Errorf("program already running")
 	}
 
-	dropObjs.DropEvents = coll.Maps["drop_events"]
+	p.ctx, p.cancel = context.WithCancel(ctx)
+	p.running = true
 
-	// Try to attach kfree_skb tracepoint
-	if prog, exists := coll.Programs["trace_kfree_skb"]; exists {
-		tp, err := link.Tracepoint("skb", "kfree_skb", prog, nil)
-		if err != nil {
-			logger.Infof("Could not attach kfree_skb tracepoint: %v", err)
-		} else {
-			dropLinks = append(dropLinks, tp)
-			logger.Info("Attached kfree_skb tracepoint for packet drop monitoring")
-		}
+	go p.processEvents()
+
+	logger.Info("Connection monitoring program started")
+	return nil
+}
+
+func (p *connectionProgram) Stop() error {
+	if !p.running {
+		return nil
 	}
 
-	// Try to attach tcp_drop kprobe
-	if prog, exists := coll.Programs["trace_tcp_drop"]; exists {
-		kp, err := link.Kprobe("tcp_drop", prog, nil)
-		if err != nil {
-			logger.Infof("Could not attach tcp_drop kprobe: %v", err)
-		} else {
-			dropLinks = append(dropLinks, kp)
-			logger.Info("Attached tcp_drop kprobe for packet drop monitoring")
-		}
+	if p.cancel != nil {
+		p.cancel()
 	}
 
-	if len(dropLinks) == 0 {
-		coll.Close()
-		return fmt.Errorf("no packet drop attach points available")
+	if p.reader != nil {
+		p.reader.Close()
+		p.reader = nil
 	}
 
-	// Start reading from ring buffer
-	dropReader, err = ringbuf.NewReader(dropObjs.DropEvents)
-	if err != nil {
-		for _, l := range dropLinks {
+	for _, l := range p.links {
+		if l != nil {
 			l.Close()
 		}
-		coll.Close()
-		return err
+	}
+	p.links = nil
+
+	if p.collection != nil {
+		p.collection.Close()
+		p.collection = nil
 	}
 
-	logger.Info("Packet drop monitoring eBPF program loaded successfully")
+	p.running = false
+	close(p.eventChan)
+
+	logger.Info("Connection monitoring program stopped")
 	return nil
 }
 
-// processConnectionEvents reads events from the connection ring buffer and stores them
-func processConnectionEvents() {
-	defer close(eventDone)
-	logger.Info("Starting connection ring buffer event processing...")
+func (p *connectionProgram) IsRunning() bool {
+	return p.running
+}
+
+func (p *connectionProgram) GetEventChannel() <-chan BPFEvent {
+	return p.eventChan
+}
+
+func (p *connectionProgram) GetSummary(pid uint32, command string, durationSeconds int) int {
+	since := GetSystemBootTime().Add(-time.Duration(durationSeconds) * time.Second)
+	return p.storage.Count(pid, command, p.name, since)
+}
+
+func (p *connectionProgram) GetAllEvents() map[uint32][]BPFEvent {
+	allEvents := p.storage.GetAll()
+	if connectionEvents, exists := allEvents[p.name]; exists {
+		return connectionEvents
+	}
+	return make(map[uint32][]BPFEvent)
+}
+
+func (p *connectionProgram) processEvents() {
+	logger.Info("Starting connection event processing...")
 
 	for {
 		select {
-		case <-eventCtx.Done():
+		case <-p.ctx.Done():
 			logger.Info("Stopping connection event processing...")
 			return
 		default:
-			record, err := connectionReader.Read()
+			record, err := p.reader.Read()
 			if err != nil {
-				if eventCtx.Err() != nil {
-					return // Context cancelled, normal shutdown
+				if p.ctx.Err() != nil {
+					return
 				}
 				logger.Errorf("Error reading from connection ring buffer: %v", err)
 				continue
 			}
 
-			if err := processConnectionEvent(record.RawSample); err != nil {
+			if err := p.processEvent(record.RawSample); err != nil {
 				logger.Errorf("Error processing connection event: %v", err)
 			}
 		}
 	}
 }
 
-// processPacketDropEvents reads events from the packet drop ring buffer and stores them
-func processPacketDropEvents() {
-	logger.Info("Starting packet drop ring buffer event processing...")
-
-	for {
-		select {
-		case <-eventCtx.Done():
-			logger.Info("Stopping packet drop event processing...")
-			return
-		default:
-			record, err := dropReader.Read()
-			if err != nil {
-				if eventCtx.Err() != nil {
-					return // Context cancelled, normal shutdown
-				}
-				logger.Errorf("Error reading from drop ring buffer: %v", err)
-				continue
-			}
-
-			if err := processPacketDropEvent(record.RawSample); err != nil {
-				logger.Errorf("Error processing packet drop event: %v", err)
-			}
-		}
-	}
-}
-
-// processConnectionEvent processes a single connection event
-func processConnectionEvent(data []byte) error {
+func (p *connectionProgram) processEvent(data []byte) error {
 	if len(data) < 60 {
 		return fmt.Errorf("connection event data too short: %d bytes", len(data))
 	}
 
 	var event Event
 
-	// Expected structure layout (based on struct event_t):
-	// u32 pid (4 bytes)
-	// u64 ts (8 bytes)
-	// u32 ret (4 bytes)
-	// char comm[16] (16 bytes)
-	// u32 dest_ip (4 bytes)
-	// u8 dest_ip6[16] (16 bytes)
-	// u16 dest_port (2 bytes)
-	// u16 family (2 bytes)
-	// u8 protocol (1 byte)
-	// u8 sock_type (1 byte)
-	// u16 padding (2 bytes)
-	// Total: 60 bytes
-
+	// Parse according to the C struct layout
 	event.PID = binary.LittleEndian.Uint32(data[0:4])
 	event.TS = binary.LittleEndian.Uint64(data[4:12])
 	event.Ret = int32(binary.LittleEndian.Uint32(data[12:16]))
@@ -318,24 +271,30 @@ func processConnectionEvent(data []byte) error {
 	const AF_INET6 = 10
 
 	if event.Family == AF_INET6 {
-		// Clear IPv4 data for IPv6 connections
 		event.DestIPv4 = 0
 	} else if event.Family == AF_INET {
-		// Clear IPv6 data (should already be zero from struct initialization)
 		for i := range event.DestIPv6 {
 			event.DestIPv6[i] = 0
 		}
 	}
 
-	// Skip events with no valid destination (common with IPv6 connections that fail address extraction)
+	// Skip events with no valid destination
 	if event.GetDestIP() == "" {
 		return nil
 	}
 
-	// Store the event
-	connectionsMu.Lock()
-	connections[event.PID] = append(connections[event.PID], event)
-	connectionsMu.Unlock()
+	// Wrap and store
+	wrapper := &connectionEventWrapper{Event: event}
+	if err := p.storage.Store(wrapper); err != nil {
+		return fmt.Errorf("failed to store event: %w", err)
+	}
+
+	// Send to channel
+	select {
+	case p.eventChan <- wrapper:
+	default:
+		logger.Infof("Connection event channel full, dropping event")
+	}
 
 	logger.Debugf("Connection event: PID=%d, Command=%s, Dest=%s, Protocol=%s",
 		event.PID, event.GetCommand(), event.GetDestination(), event.GetProtocol())
@@ -343,23 +302,221 @@ func processConnectionEvent(data []byte) error {
 	return nil
 }
 
-// processPacketDropEvent processes a single packet drop event
-func processPacketDropEvent(data []byte) error {
+// packetDropProgram implements BPFProgram for packet drop monitoring
+type packetDropProgram struct {
+	name        string
+	description string
+	objectPath  string
+	
+	// eBPF resources
+	collection *ebpf.Collection
+	eventsMap  *ebpf.Map
+	links      []link.Link
+	reader     *ringbuf.Reader
+	
+	// Event processing
+	eventChan chan BPFEvent
+	ctx       context.Context
+	cancel    context.CancelFunc
+	running   bool
+	
+	// Storage
+	storage EventStorage
+}
+
+func newPacketDropProgram(storage EventStorage) *packetDropProgram {
+	return &packetDropProgram{
+		name:        "packet_drop",
+		description: "Monitors packet drops via kfree_skb tracepoint and tcp_drop kprobe",
+		objectPath:  "bpf/packet_drop.o",
+		eventChan:   make(chan BPFEvent, 1000),
+		storage:     storage,
+	}
+}
+
+func (p *packetDropProgram) GetName() string {
+	return p.name
+}
+
+func (p *packetDropProgram) GetDescription() string {
+	return p.description
+}
+
+func (p *packetDropProgram) GetObjectPath() string {
+	return p.objectPath
+}
+
+func (p *packetDropProgram) Load() error {
+	spec, err := ebpf.LoadCollectionSpec(p.objectPath)
+	if err != nil {
+		return fmt.Errorf("failed to load collection spec: %w", err)
+	}
+
+	collection, err := ebpf.NewCollection(spec)
+	if err != nil {
+		return fmt.Errorf("failed to create collection: %w", err)
+	}
+
+	p.collection = collection
+	p.eventsMap = collection.Maps["drop_events"]
+
+	logger.Infof("Packet drop monitoring program loaded from %s", p.objectPath)
+	return nil
+}
+
+func (p *packetDropProgram) Attach() error {
+	if p.collection == nil {
+		return fmt.Errorf("program not loaded")
+	}
+
+	attachedCount := 0
+
+	// Try to attach kfree_skb tracepoint
+	if prog, exists := p.collection.Programs["trace_kfree_skb"]; exists {
+		tp, err := link.Tracepoint("skb", "kfree_skb", prog, nil)
+		if err != nil {
+			logger.Infof("Could not attach kfree_skb tracepoint: %v", err)
+		} else {
+			p.links = append(p.links, tp)
+			attachedCount++
+			logger.Info("Attached kfree_skb tracepoint for packet drop monitoring")
+		}
+	}
+
+	// Try to attach tcp_drop kprobe
+	if prog, exists := p.collection.Programs["trace_tcp_drop"]; exists {
+		kp, err := link.Kprobe("tcp_drop", prog, nil)
+		if err != nil {
+			logger.Infof("Could not attach tcp_drop kprobe: %v", err)
+		} else {
+			p.links = append(p.links, kp)
+			attachedCount++
+			logger.Info("Attached tcp_drop kprobe for packet drop monitoring")
+		}
+	}
+
+	if attachedCount == 0 {
+		return fmt.Errorf("no packet drop attach points available")
+	}
+
+	reader, err := ringbuf.NewReader(p.eventsMap)
+	if err != nil {
+		for _, l := range p.links {
+			l.Close()
+		}
+		return fmt.Errorf("failed to create ring buffer reader: %w", err)
+	}
+
+	p.reader = reader
+	logger.Infof("Packet drop monitoring program attached (%d attach points)", attachedCount)
+	return nil
+}
+
+func (p *packetDropProgram) Start(ctx context.Context) error {
+	if p.reader == nil {
+		return fmt.Errorf("program not attached")
+	}
+
+	if p.running {
+		return fmt.Errorf("program already running")
+	}
+
+	p.ctx, p.cancel = context.WithCancel(ctx)
+	p.running = true
+
+	go p.processEvents()
+
+	logger.Info("Packet drop monitoring program started")
+	return nil
+}
+
+func (p *packetDropProgram) Stop() error {
+	if !p.running {
+		return nil
+	}
+
+	if p.cancel != nil {
+		p.cancel()
+	}
+
+	if p.reader != nil {
+		p.reader.Close()
+		p.reader = nil
+	}
+
+	for _, l := range p.links {
+		if l != nil {
+			l.Close()
+		}
+	}
+	p.links = nil
+
+	if p.collection != nil {
+		p.collection.Close()
+		p.collection = nil
+	}
+
+	p.running = false
+	close(p.eventChan)
+
+	logger.Info("Packet drop monitoring program stopped")
+	return nil
+}
+
+func (p *packetDropProgram) IsRunning() bool {
+	return p.running
+}
+
+func (p *packetDropProgram) GetEventChannel() <-chan BPFEvent {
+	return p.eventChan
+}
+
+func (p *packetDropProgram) GetSummary(pid uint32, command string, durationSeconds int) int {
+	since := GetSystemBootTime().Add(-time.Duration(durationSeconds) * time.Second)
+	return p.storage.Count(pid, command, p.name, since)
+}
+
+func (p *packetDropProgram) GetAllEvents() map[uint32][]BPFEvent {
+	allEvents := p.storage.GetAll()
+	if dropEvents, exists := allEvents[p.name]; exists {
+		return dropEvents
+	}
+	return make(map[uint32][]BPFEvent)
+}
+
+func (p *packetDropProgram) processEvents() {
+	logger.Info("Starting packet drop event processing...")
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			logger.Info("Stopping packet drop event processing...")
+			return
+		default:
+			record, err := p.reader.Read()
+			if err != nil {
+				if p.ctx.Err() != nil {
+					return
+				}
+				logger.Errorf("Error reading from packet drop ring buffer: %v", err)
+				continue
+			}
+
+			if err := p.processEvent(record.RawSample); err != nil {
+				logger.Errorf("Error processing packet drop event: %v", err)
+			}
+		}
+	}
+}
+
+func (p *packetDropProgram) processEvent(data []byte) error {
 	if len(data) < 32 {
 		return fmt.Errorf("drop event data too short: %d bytes", len(data))
 	}
 
 	var event DropEvent
 
-	// Expected structure layout for drop_event_t:
-	// u32 pid (4 bytes)
-	// u64 ts (8 bytes)
-	// char comm[16] (16 bytes)
-	// u32 drop_reason (4 bytes)
-	// u32 skb_len (4 bytes)
-	// u8 padding[8] (8 bytes)
-	// Total: 44 bytes
-
+	// Parse according to the C struct layout
 	event.PID = binary.LittleEndian.Uint32(data[0:4])
 	event.TS = binary.LittleEndian.Uint64(data[4:12])
 	copy(event.Comm[:], data[12:28])
@@ -368,223 +525,180 @@ func processPacketDropEvent(data []byte) error {
 		event.SkbLen = binary.LittleEndian.Uint32(data[32:36])
 	}
 
-	// Debug: Log raw data to understand what we're getting
-	logger.Debugf("Raw packet drop data (%d bytes): %v", len(data), data)
-	logger.Debugf("Parsed drop event: PID=%d, TS=%d, Comm=%v, DropReason=%d, SkbLen=%d",
-		event.PID, event.TS, event.Comm, event.DropReason, event.SkbLen)
+	// Wrap and store
+	wrapper := &packetDropEventWrapper{DropEvent: event}
+	if err := p.storage.Store(wrapper); err != nil {
+		return fmt.Errorf("failed to store event: %w", err)
+	}
 
-	// Store the event
-	dropsMu.Lock()
-	drops[event.PID] = append(drops[event.PID], event)
-	dropsMu.Unlock()
+	// Send to channel
+	select {
+	case p.eventChan <- wrapper:
+	default:
+		logger.Infof("Packet drop event channel full, dropping event")
+	}
 
 	logger.Debugf("Packet drop event: PID=%d, Command=%s, Reason=%s, WallTime=%s",
-		event.PID, event.GetCommand(), event.GetDropReasonString(), event.GetWallClockTime().Format("2006-01-02 15:04:05"))
+		event.PID, event.GetCommand(), event.GetDropReasonString(),
+		wrapper.GetWallClockTime().Format("2006-01-02 15:04:05"))
 
 	return nil
 }
 
-// GetConnectionSummary returns connection statistics for a given PID or command and duration
+// registerDefaultPrograms registers all default eBPF programs
+func registerDefaultPrograms() error {
+	storage := globalManager.GetStorage()
+
+	// Register connection monitoring program
+	connectionProg := newConnectionProgram(storage)
+	if err := globalManager.RegisterProgram(connectionProg); err != nil {
+		return fmt.Errorf("failed to register connection program: %w", err)
+	}
+
+	// Register packet drop monitoring program
+	packetDropProg := newPacketDropProgram(storage)
+	if err := globalManager.RegisterProgram(packetDropProg); err != nil {
+		return fmt.Errorf("failed to register packet drop program: %w", err)
+	}
+
+	logger.Info("Registered all default eBPF programs")
+	return nil
+}
+
+// LoadAndAttach initializes and starts all eBPF programs using the new modular architecture
+func LoadAndAttach() error {
+	// Remove memory limit for eBPF
+	if err := rlimit.RemoveMemlock(); err != nil {
+		return err
+	}
+
+	// Create manager and storage
+	globalManager = NewManager()
+
+	// Check if eBPF is available
+	if !globalManager.IsAvailable() {
+		logger.Info("eBPF not available, running without monitoring")
+		return nil
+	}
+
+	// Register all default programs
+	if err := registerDefaultPrograms(); err != nil {
+		return err
+	}
+
+	// Load all programs
+	if err := globalManager.LoadAll(); err != nil {
+		return err
+	}
+
+	// Attach all programs
+	if err := globalManager.AttachAll(); err != nil {
+		return err
+	}
+
+	// Start all programs
+	if err := globalManager.StartAll(); err != nil {
+		return err
+	}
+
+	logger.Info("eBPF programs loaded and started successfully")
+	return nil
+}
+
+// Cleanup stops all programs and cleans up resources
+func Cleanup() {
+	if globalManager != nil {
+		globalManager.StopAll()
+		logger.Info("eBPF cleanup complete")
+	}
+}
+
+// GetConnectionSummary returns connection statistics - maintains backward compatibility
 func GetConnectionSummary(pid uint32, command string, durationSeconds int) int {
-	connectionsMu.RLock()
-	defer connectionsMu.RUnlock()
-
-	logger.Debugf("GetConnectionSummary called: pid=%d, command='%s', duration=%d", pid, command, durationSeconds)
-	logger.Debugf("Total PIDs in connections map: %d", len(connections))
-
-	// Debug: show all stored connections
-	for storedPid, events := range connections {
-		logger.Debugf("Stored PID %d has %d events", storedPid, len(events))
-		for i, event := range events {
-			if i >= 3 {
-				logger.Debugf("  ... and %d more events", len(events)-3)
-				break
-			}
-			logger.Debugf("  Event %d: Command=%s, Dest=%s, TS=%d", i+1, event.GetCommand(), event.GetDestination(), event.TS)
-		}
-	}
-
-	// Get current eBPF time for comparison
-	currentEBPFTime := time.Since(systemBootTime).Nanoseconds()
-	logger.Debugf("Current eBPF time (ns since boot): %d", currentEBPFTime)
-
-	// Check if we have any events at all
-	totalEvents := 0
-	for _, events := range connections {
-		totalEvents += len(events)
-	}
-	if totalEvents == 0 {
-		logger.Debug("No connection events stored yet")
+	if globalManager == nil {
 		return 0
 	}
 
-	// Instead of using newest timestamp, use current time for cutoff calculation
-	// This matches the eBPF time format (nanoseconds since boot)
-	cutoffTime := currentEBPFTime - int64(durationSeconds)*int64(time.Second) // Convert seconds to nanoseconds
-
-	// If command is specified, search by command name across all PIDs
-	if command != "" {
-		count := 0
-		for _, events := range connections {
-			for _, event := range events {
-				if strings.Contains(strings.ToLower(event.GetCommand()), strings.ToLower(command)) &&
-					int64(event.TS) >= cutoffTime {
-					count++
-				}
-			}
-		}
-		logger.Debugf("Found %d connection attempts for command '%s' in last %d seconds", count, command, durationSeconds)
-		return count
+	if program, exists := globalManager.GetProgram("connection"); exists {
+		return program.GetSummary(pid, command, durationSeconds)
 	}
-
-	// If PID is specified, search by specific PID
-	if pid != 0 {
-		count := 0
-		if events, exists := connections[pid]; exists {
-			for _, event := range events {
-				if int64(event.TS) >= cutoffTime {
-					count++
-				}
-			}
-		}
-		logger.Debugf("Found %d connection attempts for PID %d in last %d seconds", count, pid, durationSeconds)
-		return count
-	}
-
-	// Return the count of connection attempts in the time window
 	return 0
 }
 
-// GetAllConnections returns all tracked connections (for debugging)
-func GetAllConnections() map[uint32][]Event {
-	connectionsMu.RLock()
-	defer connectionsMu.RUnlock()
-
-	// Create a copy to avoid race conditions
-	result := make(map[uint32][]Event)
-	for pid, events := range connections {
-		eventsCopy := make([]Event, len(events))
-		copy(eventsCopy, events)
-		result[pid] = eventsCopy
-	}
-
-	return result
-}
-
-// GetPacketDropSummary returns packet drop statistics for a given PID or command and duration
+// GetPacketDropSummary returns packet drop statistics - maintains backward compatibility
 func GetPacketDropSummary(pid uint32, command string, durationSeconds int) int {
-	dropsMu.RLock()
-	defer dropsMu.RUnlock()
-
-	logger.Debugf("GetPacketDropSummary called: pid=%d, command='%s', duration=%d", pid, command, durationSeconds)
-
-	// Get current eBPF time for comparison
-	currentEBPFTime := time.Since(systemBootTime).Nanoseconds()
-	cutoffTime := currentEBPFTime - int64(durationSeconds)*int64(time.Second)
-
-	count := 0
-
-	if command != "" {
-		// Search by command name across all PIDs
-		for _, events := range drops {
-			for _, event := range events {
-				if strings.Contains(strings.ToLower(event.GetCommand()), strings.ToLower(command)) &&
-					int64(event.TS) >= cutoffTime {
-					count++
-				}
-			}
-		}
-	} else if pid != 0 {
-		// Search by specific PID
-		if events, exists := drops[pid]; exists {
-			for _, event := range events {
-				if int64(event.TS) >= cutoffTime {
-					count++
-				}
-			}
-		}
+	if globalManager == nil {
+		return 0
 	}
 
-	return count
+	if program, exists := globalManager.GetProgram("packet_drop"); exists {
+		return program.GetSummary(pid, command, durationSeconds)
+	}
+	return 0
 }
 
-// GetAllPacketDrops returns all tracked packet drops
+// GetAllConnections returns all connection events - maintains backward compatibility
+func GetAllConnections() map[uint32][]Event {
+	if globalManager == nil {
+		return make(map[uint32][]Event)
+	}
+
+	// Get connection events from storage
+	storage := globalManager.GetStorage()
+	allEvents := storage.GetAll()
+	
+	if connectionEvents, exists := allEvents["connection"]; exists {
+		// Convert BPFEvent back to Event for backward compatibility
+		result := make(map[uint32][]Event)
+		for pid, events := range connectionEvents {
+			for _, event := range events {
+				if connEvent, ok := event.(*connectionEventWrapper); ok {
+					result[pid] = append(result[pid], connEvent.Event)
+				}
+			}
+		}
+		return result
+	}
+	
+	return make(map[uint32][]Event)
+}
+
+// GetAllPacketDrops returns all packet drop events - maintains backward compatibility  
 func GetAllPacketDrops() map[uint32][]DropEvent {
-	dropsMu.RLock()
-	defer dropsMu.RUnlock()
-
-	// Create a copy to avoid race conditions
-	result := make(map[uint32][]DropEvent)
-	for pid, events := range drops {
-		eventsCopy := make([]DropEvent, len(events))
-		copy(eventsCopy, events)
-		result[pid] = eventsCopy
+	if globalManager == nil {
+		return make(map[uint32][]DropEvent)
 	}
 
-	return result
+	// Get packet drop events from storage
+	storage := globalManager.GetStorage()
+	allEvents := storage.GetAll()
+	
+	if dropEvents, exists := allEvents["packet_drop"]; exists {
+		// Convert BPFEvent back to DropEvent for backward compatibility
+		result := make(map[uint32][]DropEvent)
+		for pid, events := range dropEvents {
+			for _, event := range events {
+				if dropEvent, ok := event.(*packetDropEventWrapper); ok {
+					result[pid] = append(result[pid], dropEvent.DropEvent)
+				}
+			}
+		}
+		return result
+	}
+	
+	return make(map[uint32][]DropEvent)
 }
 
-// Cleanup closes the ring buffer reader and detaches programs
-func Cleanup() {
-	logger.Info("Starting eBPF cleanup...")
-
-	// Signal the event processing goroutine to stop
-	if eventCancel != nil {
-		eventCancel()
+// IsAvailable checks if eBPF is available - maintains backward compatibility
+func IsAvailable() bool {
+	if globalManager == nil {
+		manager := NewManager()
+		return manager.IsAvailable()
 	}
+	return globalManager.IsAvailable()
+}
 
-	// Wait for the event processing goroutine to finish (with timeout)
-	if eventDone != nil {
-		select {
-		case <-eventDone:
-		case <-time.After(5 * time.Second):
-			logger.Info("Timeout waiting for event processing to stop")
-		}
-	}
-
-	// Close connection ring buffer reader
-	if connectionReader != nil {
-		logger.Info("Closing connection ring buffer reader...")
-		connectionReader.Close()
-		connectionReader = nil
-	}
-
-	// Close packet drop ring buffer reader
-	if dropReader != nil {
-		logger.Info("Closing drop ring buffer reader...")
-		dropReader.Close()
-		dropReader = nil
-	}
-
-	// Close connection links
-	for _, l := range connectionLinks {
-		if l != nil {
-			l.Close()
-		}
-	}
-	connectionLinks = nil
-
-	// Close packet drop links
-	for _, l := range dropLinks {
-		if l != nil {
-			l.Close()
-		}
-	}
-	dropLinks = nil
-
-	// Close connection maps
-	if connectionObjs.Events != nil {
-		logger.Info("Closing connection maps...")
-		connectionObjs.Events.Close()
-		connectionObjs.Events = nil
-	}
-
-	// Close packet drop maps
-	if dropObjs.DropEvents != nil {
-		logger.Info("Closing drop maps...")
-		dropObjs.DropEvents.Close()
-		dropObjs.DropEvents = nil
-	}
-
-	logger.Info("eBPF cleanup complete")
+// GetManager returns the global manager for advanced usage
+func GetManager() *Manager {
+	return globalManager
 }
