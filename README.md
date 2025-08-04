@@ -1,5 +1,6 @@
 # eBPF Network Monitor
 
+[![CI Pipeline](https://github.com/srodi/mcp-ebpf/actions/workflows/ci.yml/badge.svg)](https://github.com/srodi/mcp-ebpf/actions/workflows/ci.yml)
 [![API Documentation](https://img.shields.io/badge/API-Documentation-blue?style=for-the-badge&logo=swagger)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger.json)
 [![OpenAPI Spec](https://img.shields.io/badge/OpenAPI-3.0-green?style=for-the-badge&logo=openapiinitiative)](docs/swagger.json)
 [![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=for-the-badge&logo=go)](https://golang.org)
