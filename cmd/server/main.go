@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/srodi/ebpf-server/internal/api"
-	"github.com/srodi/ebpf-server/internal/ebpf"
+	"github.com/srodi/ebpf-server/internal/system"
 	"github.com/srodi/ebpf-server/pkg/logger"
-	
-	httpSwagger "github.com/swaggo/http-swagger"
+
 	_ "github.com/srodi/ebpf-server/docs/swagger" // Import generated docs
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 func main() {
@@ -29,12 +29,19 @@ func main() {
 	logger.Debug("Debug logging is enabled")
 	logger.Debugf("Debug logging test - IsDebugEnabled: %v", logger.IsDebugEnabled())
 
+	// Create a new system instance
+	ctx := context.Background()
+	logger.Debug("Creating system instance...")
+	system := system.NewSystem()
+	// Initialize API with the system
+	api.Initialize(system)
+
 	// Initialize and start eBPF programs
-	if err := ebpf.Initialize(); err != nil {
+	if err := system.Initialize(); err != nil {
 		logger.Fatalf("failed to initialize eBPF: %v", err)
 	}
-	
-	if err := ebpf.Start(); err != nil {
+
+	if err := system.Start(ctx); err != nil {
 		logger.Fatalf("failed to start eBPF: %v", err)
 	}
 
@@ -47,7 +54,7 @@ func main() {
 		<-c
 		logger.Info("Shutdown signal received...")
 		logger.Debug("Starting cleanup process...")
-		if err := ebpf.Stop(); err != nil {
+		if err := system.Stop(ctx); err != nil {
 			logger.Errorf("Error stopping eBPF system: %v", err)
 		}
 		logger.Debug("eBPF cleanup complete, canceling context...")
@@ -63,11 +70,11 @@ func main() {
 	mux.HandleFunc("/api/list-connections", api.HandleListConnections)
 	mux.HandleFunc("/api/list-packet-drops", api.HandleListPacketDrops)
 	mux.HandleFunc("/health", api.HandleHealth)
-	
+
 	// New auto-generated API endpoints
 	mux.HandleFunc("/api/programs", api.HandlePrograms)
 	mux.HandleFunc("/api/events", api.HandleEvents)
-	
+
 	// Swagger documentation
 	mux.HandleFunc("/docs/", httpSwagger.WrapHandler)
 
