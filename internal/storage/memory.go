@@ -182,9 +182,17 @@ func (s *StorageWithSink) consumeEvents() {
 			}
 			
 			if err := s.storage.Store(s.ctx, event); err != nil {
-				// Log error but continue processing
-				// In production, you'd want proper logging here
-				_ = err // Explicitly ignore error for now
+				// Log the storage error - this could indicate memory pressure,
+				// disk space issues, or other critical storage problems
+				logger.Errorf("Failed to store event (PID: %d, Type: %s): %v", 
+					event.PID(), event.Type(), err)
+				
+				// For critical storage failures, we continue processing to avoid
+				// blocking the event stream, but log the error for monitoring
+				// In production, consider implementing:
+				// - Metrics/alerting for storage failure rates
+				// - Circuit breaker for persistent failures
+				// - Backup storage mechanisms
 			}
 			
 		case <-s.ctx.Done():

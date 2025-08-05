@@ -495,7 +495,10 @@ func (p *Program) processEvent(data []byte) error {
     }
     
     // Store event
-    p.storage.Store(event)
+    if err := p.storage.Store(ctx, event); err != nil {
+        logger.Errorf("Failed to store event: %v", err)
+        return err
+    }
     
     // Send to channel for real-time processing
     select {
