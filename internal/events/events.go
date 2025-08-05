@@ -6,11 +6,94 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/srodi/ebpf-server/internal/core"
+	"github.com/srodi/ebpf-server/pkg/logger"
 )
+
+var (
+	// Cached boot time to avoid recalculating it for every event
+	systemBootTime     time.Time
+	bootTimeCalculated bool
+	bootTimeMutex      sync.Mutex
+)
+
+// calculateSystemBootTime calculates the system boot time.
+// On Linux, it reads /proc/stat to get the 'btime' field.
+// On other platforms, it uses a fallback method.
+func calculateSystemBootTime() time.Time {
+	bootTimeMutex.Lock()
+	defer bootTimeMutex.Unlock()
+	
+	if bootTimeCalculated {
+		return systemBootTime
+	}
+	
+	// Try Linux-specific method first
+	if bootTime, err := getBootTimeLinux(); err == nil {
+		systemBootTime = bootTime
+		bootTimeCalculated = true
+		logger.Debugf("System boot time calculated (Linux): %v", systemBootTime)
+		return systemBootTime
+	}
+	
+	// Fallback for non-Linux systems or when /proc/stat is unavailable
+	// This provides a reasonable approximation for development/testing
+	systemBootTime = time.Now().Add(-time.Hour * 24) // Assume system has been up for less than 24 hours
+	bootTimeCalculated = true
+	logger.Debugf("System boot time calculated (fallback): %v", systemBootTime)
+	return systemBootTime
+}
+
+// getBootTimeLinux reads boot time from /proc/stat (Linux-specific).
+func getBootTimeLinux() (time.Time, error) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return time.Time{}, err
+	}
+	
+	// Parse /proc/stat to find the btime line
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "btime ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				bootTimeSeconds, err := strconv.ParseInt(fields[1], 10, 64)
+				if err != nil {
+					return time.Time{}, err
+				}
+				return time.Unix(bootTimeSeconds, 0), nil
+			}
+		}
+	}
+	
+	return time.Time{}, fmt.Errorf("btime not found in /proc/stat")
+}
+
+// convertEBPFTimestamp converts an eBPF timestamp (nanoseconds since boot) to wall-clock time.
+// eBPF timestamps are typically obtained using bpf_ktime_get_ns() which returns nanoseconds
+// since system boot. To convert to wall-clock time, we add this to the system boot time.
+func convertEBPFTimestamp(ebpfTimestampNs uint64) time.Time {
+	bootTime := calculateSystemBootTime()
+	
+	// Add the eBPF timestamp (nanoseconds since boot) to the boot time
+	return bootTime.Add(time.Duration(ebpfTimestampNs) * time.Nanosecond)
+}
+
+// ResetBootTimeCache resets the cached boot time calculation.
+// This is useful for testing or if the system time changes significantly.
+func ResetBootTimeCache() {
+	bootTimeMutex.Lock()
+	defer bootTimeMutex.Unlock()
+	bootTimeCalculated = false
+	systemBootTime = time.Time{}
+}
 
 // BaseEvent provides common functionality for all eBPF events.
 type BaseEvent struct {
@@ -35,11 +118,9 @@ func NewBaseEvent(eventType string, pid uint32, command string, timestamp uint64
 	}
 	id := hex.EncodeToString(idBytes)
 
-	// Convert eBPF timestamp to wall clock time
-	// Note: This is a simplified conversion. In production, you'd want to
-	// calculate the boot time offset more accurately.
-	bootTime := time.Now().Add(-time.Duration(timestamp))
-	eventTime := bootTime.Add(time.Duration(timestamp))
+	// Convert eBPF timestamp to wall clock time using proper boot time calculation
+	// eBPF timestamps are nanoseconds since boot (from bpf_ktime_get_ns())
+	eventTime := convertEBPFTimestamp(timestamp)
 
 	return &BaseEvent{
 		id:        id,

@@ -67,6 +67,8 @@ int trace_connect(struct trace_event_raw_sys_enter *ctx) {
     if (!e) return 0;
 
     e->pid = bpf_get_current_pid_tgid() >> 32;
+    // bpf_ktime_get_ns() returns nanoseconds since boot - this will be
+    // converted to wall-clock time in userspace using system boot time
     e->ts = bpf_ktime_get_ns();
     e->ret = 0; // Initialize ret field
     bpf_get_current_comm(&e->comm, sizeof(e->comm));

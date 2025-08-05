@@ -46,6 +46,8 @@ int trace_kfree_skb(void *ctx) {
     
     // Fill basic event information
     event->pid = pid;
+    // bpf_ktime_get_ns() returns nanoseconds since boot - this will be
+    // converted to wall-clock time in userspace using system boot time
     event->ts = bpf_ktime_get_ns();
     event->drop_reason = 1; // Generic drop reason
     event->skb_len = 1; // Mark as valid drop event
@@ -83,6 +85,8 @@ int trace_tcp_drop(struct pt_regs *ctx) {
     
     // Fill basic event information
     event->pid = pid;
+    // bpf_ktime_get_ns() returns nanoseconds since boot - this will be
+    // converted to wall-clock time in userspace using system boot time
     event->ts = bpf_ktime_get_ns();
     event->drop_reason = 2; // TCP drop
     event->skb_len = 1; // Mark as valid drop event

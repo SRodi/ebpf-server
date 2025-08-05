@@ -353,3 +353,76 @@ func TestChannelStreamCapacity(t *testing.T) {
 
 	stream.Close()
 }
+
+// TestTimestampConversion tests the eBPF timestamp to wall-clock time conversion
+func TestTimestampConversion(t *testing.T) {
+	// Reset boot time cache for testing
+	ResetBootTimeCache()
+	
+	// Test with a known timestamp
+	testTimestamp := uint64(5000000000) // 5 seconds since boot in nanoseconds
+	
+	event := NewBaseEvent("test", 1234, "test", testTimestamp, nil)
+	
+	// The converted time should be reasonable (not zero, not in the future)
+	eventTime := event.Time()
+	if eventTime.IsZero() {
+		t.Error("converted time should not be zero")
+	}
+	
+	// The event time should be in the past (assuming system has been up for more than 5 seconds)
+	if eventTime.After(time.Now()) {
+		t.Error("converted time should not be in the future")
+	}
+	
+	// Test that the timestamp is preserved
+	if event.Timestamp() != testTimestamp {
+		t.Errorf("expected timestamp %d, got %d", testTimestamp, event.Timestamp())
+	}
+}
+
+// TestBootTimeCalculation tests the boot time calculation mechanism
+func TestBootTimeCalculation(t *testing.T) {
+	// Reset boot time cache
+	ResetBootTimeCache()
+	
+	// First calculation
+	bootTime1 := calculateSystemBootTime()
+	if bootTime1.IsZero() {
+		t.Error("boot time should not be zero")
+	}
+	
+	// Second calculation should return cached value
+	bootTime2 := calculateSystemBootTime()
+	if !bootTime1.Equal(bootTime2) {
+		t.Error("boot time should be cached and consistent")
+	}
+	
+	// Boot time should be in the past
+	if bootTime1.After(time.Now()) {
+		t.Error("boot time should be in the past")
+	}
+}
+
+// TestEBPFTimestampConversion tests the core timestamp conversion function
+func TestEBPFTimestampConversion(t *testing.T) {
+	// Reset boot time cache
+	ResetBootTimeCache()
+	
+	// Test with zero timestamp (should equal boot time)
+	zeroTime := convertEBPFTimestamp(0)
+	bootTime := calculateSystemBootTime()
+	
+	// Zero timestamp should equal boot time
+	if !zeroTime.Equal(bootTime) {
+		t.Errorf("zero timestamp should equal boot time, got %v, expected %v", zeroTime, bootTime)
+	}
+	
+	// Test with 1 second offset
+	oneSecond := convertEBPFTimestamp(1000000000) // 1 second in nanoseconds
+	expectedTime := bootTime.Add(time.Second)
+	
+	if !oneSecond.Equal(expectedTime) {
+		t.Errorf("1 second timestamp incorrect, got %v, expected %v", oneSecond, expectedTime)
+	}
+}

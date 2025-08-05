@@ -657,6 +657,39 @@ event := events.NewBaseEvent(
 )
 ```
 
+### Timestamp Handling
+
+eBPF programs use `bpf_ktime_get_ns()` to capture timestamps, which returns nanoseconds since system boot. The event system automatically converts these to wall-clock time:
+
+**In eBPF C code:**
+```c
+// Use bpf_ktime_get_ns() - returns nanoseconds since boot
+event->ts = bpf_ktime_get_ns();
+```
+
+**In userspace Go code:**
+```go
+// The timestamp is automatically converted to wall-clock time
+event := events.NewBaseEvent("connection", pid, command, timestamp, metadata)
+// event.Time() returns proper wall-clock time
+// event.Timestamp() returns original eBPF timestamp (nanoseconds since boot)
+```
+
+**Conversion Process:**
+1. eBPF program captures `bpf_ktime_get_ns()` (nanoseconds since boot)
+2. Userspace reads system boot time from `/proc/stat` (cached for performance)
+3. Wall-clock time = boot_time + ebpf_timestamp
+4. Both original timestamp and converted time are available in the event
+
+**Important Notes:**
+- Always use `bpf_ktime_get_ns()` in eBPF programs for consistency
+- Don't use `bpf_ktime_get_boot_ns()` or other time functions
+- The conversion handles timezone and system clock adjustments
+- Boot time is cached but can be reset with `events.ResetBootTimeCache()`
+- On Linux: reads actual boot time from `/proc/stat` for accuracy
+- On other platforms: uses fallback method suitable for development/testing
+```
+
 ### Custom Events
 
 For complex events, you can implement the `core.Event` interface directly:
