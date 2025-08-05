@@ -10,8 +10,11 @@ import (
 	"time"
 
 	"github.com/srodi/ebpf-server/internal/api"
-	"github.com/srodi/ebpf-server/internal/bpf"
+	"github.com/srodi/ebpf-server/internal/system"
 	"github.com/srodi/ebpf-server/pkg/logger"
+
+	_ "github.com/srodi/ebpf-server/docs/swagger" // Import generated docs
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 func main() {
@@ -21,9 +24,25 @@ func main() {
 	)
 	flag.Parse()
 
-	// Load and attach eBPF programs
-	if err := bpf.LoadAndAttach(); err != nil {
-		logger.Fatalf("failed to load eBPF: %v", err)
+	// Check if debug logging is enabled
+	logger.Info("Starting eBPF Network Monitor...")
+	logger.Debug("Debug logging is enabled")
+	logger.Debugf("Debug logging test - IsDebugEnabled: %v", logger.IsDebugEnabled())
+
+	// Create a new system instance
+	ctx := context.Background()
+	logger.Debug("Creating system instance...")
+	system := system.NewSystem()
+	// Initialize API with the system
+	api.Initialize(system)
+
+	// Initialize and start eBPF programs
+	if err := system.Initialize(); err != nil {
+		logger.Fatalf("failed to initialize eBPF: %v", err)
+	}
+
+	if err := system.Start(ctx); err != nil {
+		logger.Fatalf("failed to start eBPF: %v", err)
 	}
 
 	// Setup signal handling for graceful shutdown
@@ -33,8 +52,12 @@ func main() {
 
 	go func() {
 		<-c
-		logger.Info("Shutting down...")
-		bpf.Cleanup()
+		logger.Info("Shutdown signal received...")
+		logger.Debug("Starting cleanup process...")
+		if err := system.Stop(ctx); err != nil {
+			logger.Errorf("Error stopping eBPF system: %v", err)
+		}
+		logger.Debug("eBPF cleanup complete, canceling context...")
 		cancel()
 	}()
 
@@ -43,8 +66,17 @@ func main() {
 
 	// API endpoints
 	mux.HandleFunc("/api/connection-summary", api.HandleConnectionSummary)
+	mux.HandleFunc("/api/packet-drop-summary", api.HandlePacketDropSummary)
 	mux.HandleFunc("/api/list-connections", api.HandleListConnections)
+	mux.HandleFunc("/api/list-packet-drops", api.HandleListPacketDrops)
 	mux.HandleFunc("/health", api.HandleHealth)
+
+	// New auto-generated API endpoints
+	mux.HandleFunc("/api/programs", api.HandlePrograms)
+	mux.HandleFunc("/api/events", api.HandleEvents)
+
+	// Swagger documentation
+	mux.HandleFunc("/docs/", httpSwagger.WrapHandler)
 
 	// Root endpoint with service information
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -55,17 +87,27 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		if _, err := w.Write([]byte(`{
 			"service": "eBPF Network Monitor",
 			"version": "v1.0.0",
-			"description": "HTTP API for eBPF-based network connection monitoring",
+			"description": "HTTP API for eBPF-based network connection and packet drop monitoring",
 			"endpoints": {
 				"POST /api/connection-summary": "Get connection summary for a process",
+				"POST /api/packet-drop-summary": "Get packet drop summary for a process",
 				"GET|POST /api/list-connections": "List network connections",
+				"GET|POST /api/list-packet-drops": "List packet drops",
+				"GET /api/programs": "List active eBPF programs",
+				"GET /api/events": "Get filtered events",
 				"GET /health": "Service health check"
 			},
-			"documentation": "See README.md for detailed API usage"
-		}`))
+			"documentation": {
+				"api": "/docs/",
+				"swagger_json": "/docs/swagger.json",
+				"swagger_yaml": "/docs/swagger.yaml"
+			}
+		}`)); err != nil {
+			logger.Error("Failed to write health response", "error", err)
+		}
 	})
 
 	logger.Infof("Starting eBPF Network Monitor HTTP API on %s...", *httpAddr)
@@ -87,12 +129,15 @@ func main() {
 	}()
 
 	// Wait for context cancellation (shutdown signal)
+	logger.Debug("Waiting for shutdown signal...")
 	<-ctx.Done()
+	logger.Debug("Context canceled, starting graceful shutdown...")
 
 	// Graceful shutdown of HTTP server
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
+	logger.Debug("Shutting down HTTP server...")
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Fatalf("HTTP server shutdown error: %v", err)
 	}

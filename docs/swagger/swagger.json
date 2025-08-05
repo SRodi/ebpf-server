@@ -1,0 +1,724 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "HTTP API for eBPF-based network connection and packet drop monitoring",
+        "title": "eBPF Network Monitor API",
+        "contact": {
+            "name": "API Support",
+            "url": "https://github.com/srodi/ebpf-server/issues",
+            "email": "support@example.com"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://github.com/srodi/ebpf-server/blob/main/LICENSE"
+        },
+        "version": "1.0.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/api/connection-summary": {
+            "get": {
+                "description": "Get count of connection events filtered by PID, command, and time window",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "Get connection statistics",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID (GET only)",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Command name (GET only)",
+                        "name": "command",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Duration in seconds (GET only, default: 60)",
+                        "name": "duration_seconds",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Connection summary request (POST only)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ConnectionSummaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Connection statistics",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ConnectionSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Get count of connection events filtered by PID, command, and time window",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "Get connection statistics",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID (GET only)",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Command name (GET only)",
+                        "name": "command",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Duration in seconds (GET only, default: 60)",
+                        "name": "duration_seconds",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Connection summary request (POST only)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ConnectionSummaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Connection statistics",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ConnectionSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events": {
+            "get": {
+                "description": "Get events filtered by type, PID, command, time range, and limit",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Query events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event type (connection, packet_drop)",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Process ID",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Command name",
+                        "name": "command",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (RFC3339 format)",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (RFC3339 format)",
+                        "name": "until",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of events to return (default: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Filtered events",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/list-connections": {
+            "get": {
+                "description": "Get recent connection events grouped by PID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connections"
+                ],
+                "summary": "List connection events",
+                "responses": {
+                    "200": {
+                        "description": "Connection events",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ConnectionListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/list-packet-drops": {
+            "get": {
+                "description": "Get recent packet drop events grouped by PID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "packet_drops"
+                ],
+                "summary": "List packet drop events",
+                "responses": {
+                    "200": {
+                        "description": "Packet drop events",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PacketDropListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/packet-drop-summary": {
+            "get": {
+                "description": "Get count of packet drop events filtered by PID, command, and time window",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "packet_drops"
+                ],
+                "summary": "Get packet drop statistics",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID (GET only)",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Command name (GET only)",
+                        "name": "command",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Duration in seconds (GET only, default: 60)",
+                        "name": "duration_seconds",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Packet drop summary request (POST only)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PacketDropSummaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Packet drop statistics",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PacketDropSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Get count of packet drop events filtered by PID, command, and time window",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "packet_drops"
+                ],
+                "summary": "Get packet drop statistics",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Process ID (GET only)",
+                        "name": "pid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Command name (GET only)",
+                        "name": "command",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Duration in seconds (GET only, default: 60)",
+                        "name": "duration_seconds",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Packet drop summary request (POST only)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PacketDropSummaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Packet drop statistics",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PacketDropSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/programs": {
+            "get": {
+                "description": "Get the status and information of all loaded eBPF programs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "programs"
+                ],
+                "summary": "List eBPF programs",
+                "responses": {
+                    "200": {
+                        "description": "List of eBPF programs",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Get the health status of the eBPF monitoring system",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "Health status",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "internal_api.ConnectionListResponse": {
+            "type": "object",
+            "properties": {
+                "events_by_pid": {
+                    "description": "Events grouped by PID",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {}
+                    }
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_events": {
+                    "description": "Total number of events",
+                    "type": "integer",
+                    "example": 10
+                },
+                "total_pids": {
+                    "description": "Number of unique PIDs",
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "internal_api.ConnectionSummaryRequest": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "description": "Command name",
+                    "type": "string",
+                    "example": "curl"
+                },
+                "duration_seconds": {
+                    "description": "Duration in seconds",
+                    "type": "integer",
+                    "example": 60
+                },
+                "pid": {
+                    "description": "Process ID",
+                    "type": "integer",
+                    "example": 1234
+                }
+            }
+        },
+        "internal_api.ConnectionSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "description": "Command name",
+                    "type": "string",
+                    "example": "curl"
+                },
+                "count": {
+                    "description": "Number of connection events",
+                    "type": "integer",
+                    "example": 5
+                },
+                "duration_seconds": {
+                    "description": "Duration in seconds",
+                    "type": "integer",
+                    "example": 60
+                },
+                "pid": {
+                    "description": "Process ID",
+                    "type": "integer",
+                    "example": 1234
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                }
+            }
+        },
+        "internal_api.PacketDropListResponse": {
+            "type": "object",
+            "properties": {
+                "events_by_pid": {
+                    "description": "Events grouped by PID",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {}
+                    }
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_events": {
+                    "description": "Total number of events",
+                    "type": "integer",
+                    "example": 7
+                },
+                "total_pids": {
+                    "description": "Number of unique PIDs",
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "internal_api.PacketDropSummaryRequest": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "description": "Command name",
+                    "type": "string",
+                    "example": "nginx"
+                },
+                "duration_seconds": {
+                    "description": "Duration in seconds",
+                    "type": "integer",
+                    "example": 60
+                },
+                "pid": {
+                    "description": "Process ID",
+                    "type": "integer",
+                    "example": 1234
+                }
+            }
+        },
+        "internal_api.PacketDropSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "description": "Command name",
+                    "type": "string",
+                    "example": "nginx"
+                },
+                "count": {
+                    "description": "Number of packet drop events",
+                    "type": "integer",
+                    "example": 3
+                },
+                "duration_seconds": {
+                    "description": "Duration in seconds",
+                    "type": "integer",
+                    "example": 60
+                },
+                "pid": {
+                    "description": "Process ID",
+                    "type": "integer",
+                    "example": 1234
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                }
+            }
+        }
+    }
+}

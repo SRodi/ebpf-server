@@ -1,309 +1,506 @@
+// Package api provides HTTP handlers for the eBPF monitoring system.
+//
+//	@title			eBPF Network Monitor API
+//	@description	HTTP API for eBPF-based network connection and packet drop monitoring
+//	@version		1.0.0
+//	@host			localhost:8080
+//	@BasePath		/
+//	@contact.name	API Support
+//	@contact.url	https://github.com/srodi/ebpf-server/issues
+//	@contact.email	support@example.com
+//	@license.name	MIT
+//	@license.url	https://github.com/srodi/ebpf-server/blob/main/LICENSE
 package api
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
-	"github.com/srodi/ebpf-server/internal/bpf"
+	"github.com/srodi/ebpf-server/internal/core"
+	"github.com/srodi/ebpf-server/internal/system"
 	"github.com/srodi/ebpf-server/pkg/logger"
 )
 
-// ConnectionSummaryRequest defines the input parameters for the connection summary endpoint
-type ConnectionSummaryRequest struct {
-	PID         int    `json:"pid,omitempty"`
-	Command     string `json:"command,omitempty"`
-	ProcessName string `json:"process_name,omitempty"`
-	Seconds     int    `json:"duration"`
+// Global system instance
+var globalSystem *system.System
+
+// Initialize sets up the API with the system instance.
+func Initialize(sys *system.System) {
+	globalSystem = sys
 }
 
-// ConnectionSummaryResponse defines the output structure for the connection summary endpoint
-type ConnectionSummaryResponse struct {
-	Total   int    `json:"total_attempts"`
-	PID     int    `json:"pid,omitempty"`
-	Command string `json:"command,omitempty"`
-	Seconds int    `json:"duration"`
-	Message string `json:"message"`
-}
+// HandleHealth responds with system health information.
+//
+//	@Summary		Health check
+//	@Description	Get the health status of the eBPF monitoring system
+//	@Tags			health
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]interface{}	"Health status"
+//	@Failure		503	{object}	map[string]string		"Service unavailable"
+//	@Router			/health [get]
+func HandleHealth(w http.ResponseWriter, r *http.Request) {
+	if globalSystem == nil {
+		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
+		return
+	}
 
-// ListConnectionsRequest defines the input parameters for the list connections endpoint
-type ListConnectionsRequest struct {
-	PID   *int `json:"pid,omitempty"`   // Optional: Filter connections for specific Process ID
-	Limit *int `json:"limit,omitempty"` // Optional: Maximum connections to return per PID (default: 100, max: 1000)
-}
+	health := map[string]interface{}{
+		"status":  "healthy",
+		"running": globalSystem.IsRunning(),
+		"time":    time.Now().Format(time.RFC3339),
+	}
 
-// ConnectionInfo represents connection event information
-type ConnectionInfo struct {
-	PID         uint32 `json:"pid"`
-	Command     string `json:"command"`
-	Destination string `json:"destination"`
-	Protocol    string `json:"protocol"`
-	ReturnCode  int32  `json:"return_code"`
-	Timestamp   string `json:"timestamp"`
-}
-
-// ListConnectionsResponse defines the output format for the list connections endpoint
-type ListConnectionsResponse struct {
-	TotalPIDs   int                         `json:"total_pids"`
-	Connections map[string][]ConnectionInfo `json:"connections"`
-	Truncated   bool                        `json:"truncated"`
-	Message     string                      `json:"message"`
-}
-
-// ErrorResponse represents an API error response
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
-}
-
-// writeJSONResponse writes a JSON response with the given status code
-func writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		logger.Errorf("Failed to encode JSON response: %v", err)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		logger.Errorf("Error encoding health response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 
-// writeErrorResponse writes an error response
-func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
-	writeJSONResponse(w, statusCode, ErrorResponse{
-		Error:   http.StatusText(statusCode),
-		Message: message,
-	})
-}
-
-// HandleConnectionSummary handles the /api/connection-summary endpoint
-func HandleConnectionSummary(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeErrorResponse(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+// HandlePrograms returns the status of all eBPF programs.
+//
+//	@Summary		List eBPF programs
+//	@Description	Get the status and information of all loaded eBPF programs
+//	@Tags			programs
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]interface{}	"List of eBPF programs"
+//	@Failure		500	{object}	map[string]string		"Internal server error"
+//	@Failure		503	{object}	map[string]string		"Service unavailable"
+//	@Router			/api/programs [get]
+func HandlePrograms(w http.ResponseWriter, r *http.Request) {
+	if globalSystem == nil {
+		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
 		return
 	}
 
-	var req ConnectionSummaryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "Invalid JSON request body")
-		return
-	}
+	programs := globalSystem.GetPrograms()
 
-	// Handle compatibility between 'command' and 'process_name' fields
-	command := req.Command
-	if command == "" && req.ProcessName != "" {
-		command = req.ProcessName
-	}
-
-	// Validate input
-	if req.Seconds <= 0 {
-		writeErrorResponse(w, http.StatusBadRequest, "duration must be positive")
-		return
-	}
-	if req.Seconds > 3600 {
-		writeErrorResponse(w, http.StatusBadRequest, "duration cannot exceed 3600 seconds")
-		return
-	}
-	if req.PID != 0 && command != "" {
-		writeErrorResponse(w, http.StatusBadRequest, "cannot specify both PID and command")
-		return
-	}
-	if req.PID == 0 && command == "" {
-		writeErrorResponse(w, http.StatusBadRequest, "must specify either PID or command")
-		return
-	}
-
-	// Get connection summary data
-	var total int
-	var monitoredPID int
-	var monitoredCommand string
-
-	if command != "" {
-		total = bpf.GetConnectionSummary(0, command, req.Seconds)
-		monitoredCommand = command
-		logger.Debugf("Connection summary for command '%s': %d attempts in %d seconds",
-			command, total, req.Seconds)
-	} else {
-		total = bpf.GetConnectionSummary(uint32(req.PID), "", req.Seconds)
-		monitoredPID = req.PID
-		logger.Debugf("Connection summary for PID %d: %d attempts in %d seconds",
-			req.PID, total, req.Seconds)
-	}
-
-	// Create human-readable message
-	var message string
-	if monitoredCommand != "" {
-		message = fmt.Sprintf("Found %d connection attempts from command '%s' over %d seconds",
-			total, monitoredCommand, req.Seconds)
-	} else {
-		message = fmt.Sprintf("Found %d connection attempts from PID %d over %d seconds",
-			total, monitoredPID, req.Seconds)
-	}
-
-	response := ConnectionSummaryResponse{
-		Total:   total,
-		PID:     monitoredPID,
-		Command: monitoredCommand,
-		Seconds: req.Seconds,
-		Message: message,
-	}
-
-	writeJSONResponse(w, http.StatusOK, response)
-}
-
-// HandleListConnections handles the /api/list-connections endpoint
-func HandleListConnections(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		// Handle GET request with query parameters
-		handleListConnectionsGET(w, r)
-	} else if r.Method == http.MethodPost {
-		// Handle POST request with JSON body
-		handleListConnectionsPOST(w, r)
-	} else {
-		writeErrorResponse(w, http.StatusMethodNotAllowed, "Only GET and POST methods are allowed")
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(programs); err != nil {
+		logger.Errorf("Error encoding programs response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 
-func handleListConnectionsGET(w http.ResponseWriter, r *http.Request) {
-	var req ListConnectionsRequest
+// HandleEvents returns events matching query parameters.
+//
+//	@Summary		Query events
+//	@Description	Get events filtered by type, PID, command, time range, and limit
+//	@Tags			events
+//	@Accept			json
+//	@Produce		json
+//	@Param			type		query		string	false	"Event type (connection, packet_drop)"
+//	@Param			pid			query		int		false	"Process ID"
+//	@Param			command		query		string	false	"Command name"
+//	@Param			since		query		string	false	"Start time (RFC3339 format)"
+//	@Param			until		query		string	false	"End time (RFC3339 format)"
+//	@Param			limit		query		int		false	"Maximum number of events to return (default: 100)"
+//	@Success		200			{object}	map[string]interface{}	"Filtered events"
+//	@Failure		500			{object}	map[string]string		"Internal server error"
+//	@Failure		503			{object}	map[string]string		"Service unavailable"
+//	@Router			/api/events [get]
+func HandleEvents(w http.ResponseWriter, r *http.Request) {
+	if globalSystem == nil {
+		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
+		return
+	}
 
 	// Parse query parameters
+	query := core.Query{}
+	
+	if eventType := r.URL.Query().Get("type"); eventType != "" {
+		query.EventType = eventType
+	}
+	
 	if pidStr := r.URL.Query().Get("pid"); pidStr != "" {
-		if pid, err := strconv.Atoi(pidStr); err != nil {
-			writeErrorResponse(w, http.StatusBadRequest, "Invalid PID parameter")
-			return
-		} else {
-			req.PID = &pid
+		if pid, err := strconv.ParseUint(pidStr, 10, 32); err == nil {
+			query.PID = uint32(pid)
 		}
 	}
-
+	
+	if command := r.URL.Query().Get("command"); command != "" {
+		query.Command = command
+	}
+	
+	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+		if since, err := time.Parse(time.RFC3339, sinceStr); err == nil {
+			query.Since = since
+		}
+	}
+	
+	if untilStr := r.URL.Query().Get("until"); untilStr != "" {
+		if until, err := time.Parse(time.RFC3339, untilStr); err == nil {
+			query.Until = until
+		}
+	}
+	
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if limit, err := strconv.Atoi(limitStr); err != nil {
-			writeErrorResponse(w, http.StatusBadRequest, "Invalid limit parameter")
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			query.Limit = limit
+		}
+	}
+	
+	// Default limit to prevent overwhelming responses
+	if query.Limit == 0 {
+		query.Limit = 100
+	}
+
+	ctx := context.Background()
+	events, err := globalSystem.QueryEvents(ctx, query)
+	if err != nil {
+		logger.Errorf("Error querying events: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"events": events,
+		"count":  len(events),
+		"query":  query,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Errorf("Error encoding events response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// HandleConnectionSummary provides connection event summaries.
+//
+//	@Summary		Get connection statistics
+//	@Description	Get count of connection events filtered by PID, command, and time window
+//	@Tags			connections
+//	@Accept			json
+//	@Produce		json
+//	@Param			pid				query		int		false	"Process ID (GET only)"
+//	@Param			command			query		string	false	"Command name (GET only)"
+//	@Param			duration_seconds	query	int		false	"Duration in seconds (GET only, default: 60)"
+//	@Param			request			body		ConnectionSummaryRequest	false	"Connection summary request (POST only)"
+//	@Success		200				{object}	ConnectionSummaryResponse	"Connection statistics"
+//	@Failure		400				{object}	map[string]string			"Bad request"
+//	@Failure		500				{object}	map[string]string			"Internal server error"
+//	@Failure		503				{object}	map[string]string			"Service unavailable"
+//	@Router			/api/connection-summary [get]
+//	@Router			/api/connection-summary [post]
+func HandleConnectionSummary(w http.ResponseWriter, r *http.Request) {
+	if globalSystem == nil {
+		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse request body for POST requests
+	var request struct {
+		PID      uint32 `json:"pid"`
+		Command  string `json:"command"`
+		Duration int    `json:"duration_seconds"`
+	}
+
+	if r.Method == "POST" {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
-		} else {
-			req.Limit = &limit
 		}
-	}
-
-	processListConnectionsRequest(w, req)
-}
-
-func handleListConnectionsPOST(w http.ResponseWriter, r *http.Request) {
-	var req ListConnectionsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErrorResponse(w, http.StatusBadRequest, "Invalid JSON request body")
-		return
-	}
-
-	processListConnectionsRequest(w, req)
-}
-
-func processListConnectionsRequest(w http.ResponseWriter, req ListConnectionsRequest) {
-	// Validate input
-	if req.Limit != nil && *req.Limit > 1000 {
-		writeErrorResponse(w, http.StatusBadRequest, "limit cannot exceed 1000")
-		return
-	}
-
-	limitValue := 100
-	if req.Limit != nil {
-		limitValue = *req.Limit
-	}
-
-	// Get all connections from the eBPF loader
-	allConnections := bpf.GetAllConnections()
-
-	result := struct {
-		TotalPIDs   int
-		Connections map[string][]ConnectionInfo
-		Truncated   bool
-	}{
-		Connections: make(map[string][]ConnectionInfo),
-		Truncated:   false,
-	}
-
-	pidCount := 0
-	for connectionPID, events := range allConnections {
-		// If PID filter is specified, skip non-matching PIDs
-		if req.PID != nil && connectionPID != uint32(*req.PID) {
-			continue
-		}
-
-		pidCount++
-		var connections []ConnectionInfo
-		pidStr := fmt.Sprintf("%d", connectionPID)
-
-		// Limit connections per PID
-		eventCount := 0
-		for _, event := range events {
-			if eventCount >= limitValue {
-				result.Truncated = true
-				break
-			}
-
-			connections = append(connections, ConnectionInfo{
-				PID:         event.PID,
-				Command:     event.GetCommand(),
-				Destination: event.GetDestination(),
-				Protocol:    event.GetProtocol(),
-				ReturnCode:  event.Ret,
-				Timestamp:   event.GetWallClockTime().Format("2006-01-02T15:04:05Z"),
-			})
-			eventCount++
-		}
-
-		if len(connections) > 0 {
-			result.Connections[pidStr] = connections
-		}
-	}
-
-	result.TotalPIDs = pidCount
-
-	logger.Debugf("List connections result: %d PIDs", result.TotalPIDs)
-
-	// Create human-readable message
-	var message string
-	if req.PID != nil {
-		totalConns := 0
-		for _, conns := range result.Connections {
-			totalConns += len(conns)
-		}
-		message = fmt.Sprintf("Found %d connections for PID %d", totalConns, *req.PID)
 	} else {
-		totalConns := 0
-		for _, conns := range result.Connections {
-			totalConns += len(conns)
+		// Handle GET request with query parameters
+		if pidStr := r.URL.Query().Get("pid"); pidStr != "" {
+			if pid, err := strconv.ParseUint(pidStr, 10, 32); err == nil {
+				request.PID = uint32(pid)
+			}
 		}
-		message = fmt.Sprintf("Found %d total connections across %d processes",
-			totalConns, result.TotalPIDs)
-		if result.Truncated {
-			message += " (results truncated due to limit)"
+		request.Command = r.URL.Query().Get("command")
+		if durationStr := r.URL.Query().Get("duration_seconds"); durationStr != "" {
+			if duration, err := strconv.Atoi(durationStr); err == nil {
+				request.Duration = duration
+			}
 		}
 	}
 
-	response := ListConnectionsResponse{
-		TotalPIDs:   result.TotalPIDs,
-		Connections: result.Connections,
-		Truncated:   result.Truncated,
-		Message:     message,
+	// Default duration to 60 seconds
+	if request.Duration == 0 {
+		request.Duration = 60
 	}
 
-	logger.Debugf("List connections result: %d PIDs, %s", response.TotalPIDs, response.Message)
+	// Build query
+	query := core.Query{
+		EventType: "connection",
+		PID:       request.PID,
+		Command:   request.Command,
+		Since:     time.Now().Add(-time.Duration(request.Duration) * time.Second),
+	}
 
-	writeJSONResponse(w, http.StatusOK, response)
-}
-
-// HandleHealth provides a simple health check endpoint
-func HandleHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeErrorResponse(w, http.StatusMethodNotAllowed, "Only GET method is allowed")
+	ctx := context.Background()
+	count, err := globalSystem.CountEvents(ctx, query)
+	if err != nil {
+		logger.Errorf("Error counting connection events: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	health := map[string]string{
-		"status":  "healthy",
-		"service": "ebpf-server",
-		"version": "v1.0.0",
+	response := map[string]interface{}{
+		"count":            count,
+		"pid":              request.PID,
+		"command":          request.Command,
+		"duration_seconds": request.Duration,
+		"query_time":       time.Now().Format(time.RFC3339),
 	}
 
-	writeJSONResponse(w, http.StatusOK, health)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Errorf("Error encoding connection summary response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// HandlePacketDropSummary provides packet drop event summaries.
+//
+//	@Summary		Get packet drop statistics
+//	@Description	Get count of packet drop events filtered by PID, command, and time window
+//	@Tags			packet_drops
+//	@Accept			json
+//	@Produce		json
+//	@Param			pid				query		int		false	"Process ID (GET only)"
+//	@Param			command			query		string	false	"Command name (GET only)"
+//	@Param			duration_seconds	query	int		false	"Duration in seconds (GET only, default: 60)"
+//	@Param			request			body		PacketDropSummaryRequest	false	"Packet drop summary request (POST only)"
+//	@Success		200				{object}	PacketDropSummaryResponse	"Packet drop statistics"
+//	@Failure		400				{object}	map[string]string			"Bad request"
+//	@Failure		500				{object}	map[string]string			"Internal server error"
+//	@Failure		503				{object}	map[string]string			"Service unavailable"
+//	@Router			/api/packet-drop-summary [get]
+//	@Router			/api/packet-drop-summary [post]
+func HandlePacketDropSummary(w http.ResponseWriter, r *http.Request) {
+	if globalSystem == nil {
+		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse request body for POST requests
+	var request struct {
+		PID      uint32 `json:"pid"`
+		Command  string `json:"command"`
+		Duration int    `json:"duration_seconds"`
+	}
+
+	if r.Method == "POST" {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+	} else {
+		// Handle GET request with query parameters
+		if pidStr := r.URL.Query().Get("pid"); pidStr != "" {
+			if pid, err := strconv.ParseUint(pidStr, 10, 32); err == nil {
+				request.PID = uint32(pid)
+			}
+		}
+		request.Command = r.URL.Query().Get("command")
+		if durationStr := r.URL.Query().Get("duration_seconds"); durationStr != "" {
+			if duration, err := strconv.Atoi(durationStr); err == nil {
+				request.Duration = duration
+			}
+		}
+	}
+
+	// Default duration to 60 seconds
+	if request.Duration == 0 {
+		request.Duration = 60
+	}
+
+	// Build query
+	query := core.Query{
+		EventType: "packet_drop",
+		PID:       request.PID,
+		Command:   request.Command,
+		Since:     time.Now().Add(-time.Duration(request.Duration) * time.Second),
+	}
+
+	ctx := context.Background()
+	count, err := globalSystem.CountEvents(ctx, query)
+	if err != nil {
+		logger.Errorf("Error counting packet drop events: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"count":            count,
+		"pid":              request.PID,
+		"command":          request.Command,
+		"duration_seconds": request.Duration,
+		"query_time":       time.Now().Format(time.RFC3339),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Errorf("Error encoding packet drop summary response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// HandleListConnections returns recent connection events.
+//
+//	@Summary		List connection events
+//	@Description	Get recent connection events grouped by PID
+//	@Tags			connections
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	ConnectionListResponse	"Connection events"
+//	@Failure		500	{object}	map[string]string		"Internal server error"
+//	@Failure		503	{object}	map[string]string		"Service unavailable"
+//	@Router			/api/list-connections [get]
+func HandleListConnections(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("🌐 HTTP REQUEST: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+	
+	if globalSystem == nil {
+		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	query := core.Query{
+		EventType: "connection",
+		Limit:     100,
+		Since:     time.Now().Add(-1 * time.Hour), // Last hour by default
+	}
+
+	ctx := context.Background()
+	events, err := globalSystem.QueryEvents(ctx, query)
+	if err != nil {
+		logger.Errorf("Error querying connection events: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Group by PID for compatibility
+	eventsByPID := make(map[uint32][]core.Event)
+	for _, event := range events {
+		pid := event.PID()
+		eventsByPID[pid] = append(eventsByPID[pid], event)
+	}
+
+	response := map[string]interface{}{
+		"total_pids":    len(eventsByPID),
+		"total_events":  len(events),
+		"events_by_pid": eventsByPID,
+		"query_time":    time.Now().Format(time.RFC3339),
+	}
+
+	logger.Debugf("🌐 HTTP RESPONSE: connections query returned %d events across %d PIDs", len(events), len(eventsByPID))
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Errorf("Error encoding list connections response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// HandleListPacketDrops returns recent packet drop events.
+//
+//	@Summary		List packet drop events
+//	@Description	Get recent packet drop events grouped by PID
+//	@Tags			packet_drops
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	PacketDropListResponse	"Packet drop events"
+//	@Failure		500	{object}	map[string]string		"Internal server error"
+//	@Failure		503	{object}	map[string]string		"Service unavailable"
+//	@Router			/api/list-packet-drops [get]
+func HandleListPacketDrops(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("🌐 HTTP REQUEST: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+	
+	if globalSystem == nil {
+		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	query := core.Query{
+		EventType: "packet_drop",
+		Limit:     100,
+		Since:     time.Now().Add(-1 * time.Hour), // Last hour by default
+	}
+
+	ctx := context.Background()
+	events, err := globalSystem.QueryEvents(ctx, query)
+	if err != nil {
+		logger.Errorf("Error querying packet drop events: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Group by PID for compatibility
+	eventsByPID := make(map[uint32][]core.Event)
+	for _, event := range events {
+		pid := event.PID()
+		eventsByPID[pid] = append(eventsByPID[pid], event)
+	}
+
+	response := map[string]interface{}{
+		"total_pids":    len(eventsByPID),
+		"total_events":  len(events),
+		"events_by_pid": eventsByPID,
+		"query_time":    time.Now().Format(time.RFC3339),
+	}
+
+	logger.Debugf("🌐 HTTP RESPONSE: packet drops query returned %d events across %d PIDs", len(events), len(eventsByPID))
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Errorf("Error encoding list packet drops response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// Swagger models for request/response documentation
+
+// ConnectionSummaryRequest represents the request body for connection summary
+type ConnectionSummaryRequest struct {
+	PID      uint32 `json:"pid" example:"1234"`                          // Process ID
+	Command  string `json:"command" example:"curl"`                      // Command name
+	Duration int    `json:"duration_seconds" example:"60"`               // Duration in seconds
+}
+
+// ConnectionSummaryResponse represents the response for connection summary
+type ConnectionSummaryResponse struct {
+	Count           int    `json:"count" example:"5"`                      // Number of connection events
+	PID             uint32 `json:"pid" example:"1234"`                     // Process ID
+	Command         string `json:"command" example:"curl"`                 // Command name
+	DurationSeconds int    `json:"duration_seconds" example:"60"`          // Duration in seconds
+	QueryTime       string `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// PacketDropSummaryRequest represents the request body for packet drop summary
+type PacketDropSummaryRequest struct {
+	PID      uint32 `json:"pid" example:"1234"`                          // Process ID
+	Command  string `json:"command" example:"nginx"`                     // Command name
+	Duration int    `json:"duration_seconds" example:"60"`               // Duration in seconds
+}
+
+// PacketDropSummaryResponse represents the response for packet drop summary
+type PacketDropSummaryResponse struct {
+	Count           int    `json:"count" example:"3"`                      // Number of packet drop events
+	PID             uint32 `json:"pid" example:"1234"`                     // Process ID
+	Command         string `json:"command" example:"nginx"`                // Command name
+	DurationSeconds int    `json:"duration_seconds" example:"60"`          // Duration in seconds
+	QueryTime       string `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// ConnectionListResponse represents the response for listing connections
+type ConnectionListResponse struct {
+	TotalPIDs    int                            `json:"total_pids" example:"3"`                     // Number of unique PIDs
+	TotalEvents  int                            `json:"total_events" example:"10"`                  // Total number of events
+	EventsByPID  map[uint32][]core.Event        `json:"events_by_pid"`                              // Events grouped by PID
+	QueryTime    string                         `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// PacketDropListResponse represents the response for listing packet drops
+type PacketDropListResponse struct {
+	TotalPIDs    int                            `json:"total_pids" example:"2"`                     // Number of unique PIDs
+	TotalEvents  int                            `json:"total_events" example:"7"`                   // Total number of events
+	EventsByPID  map[uint32][]core.Event        `json:"events_by_pid"`                              // Events grouped by PID
+	QueryTime    string                         `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }

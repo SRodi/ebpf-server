@@ -1,548 +1,282 @@
 # eBPF Network Monitor
 
-An HTTP API server that uses eBPF to monitor network connections and provide real-time network analytics.
+[![CI Pipeline](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml/badge.svg)](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml)
+[![API Documentation](https://img.shields.io/badge/API-Documentation-blue?style=for-the-badge&logo=swagger)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)
+[![OpenAPI Spec](https://img.shields.io/badge/OpenAPI-3.0-green?style=for-the-badge&logo=openapiinitiative)](docs/swagger.json)
+[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=for-the-badge&logo=go)](https://golang.org)
 
-## Overview
-
-This project implements an HTTP API server that leverages eBPF (Extended Berkeley Packet Filter) technology to monitor network connections at the kernel level. It provides **RESTful endpoints** to retrieve connection statistics and network metrics, making it easy to integrate with monitoring systems, dashboards, and automation tools.
-
-## Features
-
-- **eBPF-based Network Monitoring**: Efficient kernel-level network connection tracking
-- **REST API**: Simple HTTP endpoints for easy integration
-- **Real-time Analytics**: Live network connection statistics and metrics  
-- **Low Overhead**: Minimal performance impact using eBPF technology
-- **JSON Responses**: Structured data with human-readable messages
-- **Protocol Detection**: Intelligent identification of TCP/UDP protocols by port
-
-## Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   HTTP Client   │───▶│ HTTP API Server │───▶│  eBPF Programs  │
-│ (curl, apps,    │    │     (REST)      │    │   (Kernel)      │
-│  monitoring)    │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
-The server consists of:
-- **eBPF Programs** (`bpf/`): Kernel-space programs for network monitoring
-- **HTTP API** (`internal/api/`): RESTful endpoints for connection analysis
-- **eBPF Loader** (`internal/bpf/`): Go bindings for eBPF program management
-- **HTTP Server** (`cmd/server/`): Main server with routing and middleware
-
-## Prerequisites
-
-### System Requirements
-- Linux kernel 4.18+ (for eBPF support)
-- Root privileges (required for eBPF programs)
-
-### Development Dependencies
-- Go 1.23.0 or later
-- Clang (for compiling eBPF programs)
-- libbpf development headers
-
-### Install Dependencies
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install -y golang-go clang libbpf-dev linux-headers-$(uname -r)
-```
-
-**CentOS/RHEL/Fedora:**
-```bash
-sudo dnf install -y golang clang libbpf-devel kernel-devel
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -S go clang libbpf linux-headers
-```
-
-**macOS (for development only):**
-```bash
-brew install go llvm
-```
+A modular eBPF monitoring system with HTTP API server for real-time network and system event monitoring. Features a clean, interface-based architecture for easy extension with new monitoring programs.
 
 ## Quick Start
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/srodi/ebpf-server.git
-   cd ebpf-server
-   ```
-
-2. **Check system dependencies:**
-   ```bash
-   make check-deps
-   ```
-
-3. **Install Go dependencies:**
-   ```bash
-   make deps
-   ```
-
-4. **Build the project:**
-   ```bash
-   make build
-   ```
-
-5. **Run the server (requires root):**
-   ```bash
-   sudo make run
-   ```
-   This starts the HTTP API server on port 8080.
-
-   **Alternative**: Run directly with custom address
-   ```bash
-   sudo ./bin/ebpf-server -addr :9090
-   ```
-
-## Usage
-
-### HTTP API Endpoints
-
-The server provides a REST API on port 8080 (default) with the following endpoints:
-
-#### GET /health
-
-Health check endpoint to verify the server is running.
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "service": "ebpf-server",
-  "version": "v1.0.0"
-}
-```
-
-#### POST /api/connection-summary
-
-Get connection attempt statistics for a specific process over a time period.
-
-**Important**: This endpoint captures `connect()` syscall attempts, not actual network latency. It counts how many times a process attempted to establish connections.
-
-**Request Body:**
-```json
-{
-  "pid": 1234,              // Process ID (optional, use either pid OR command)
-  "command": "curl",        // Command name (optional, use either pid OR command)
-  "duration": 60            // Duration in seconds (1-3600, required)
-}
-```
-
-**Response:**
-```json
-{
-  "total_attempts": 5,
-  "pid": 1234,
-  "command": "",
-  "duration": 60,
-  "message": "Found 5 connection attempts from PID 1234 over 60 seconds"
-}
-```
-
-#### GET /api/list-connections
-
-List all tracked connection events with optional query parameters.
-
-**Query Parameters:**
-- `pid` (integer, optional): Filter connections for specific Process ID
-- `limit` (integer, optional): Maximum connections to return per PID (default: 100, max: 1000)
-
-**Example:**
 ```bash
-curl "http://localhost:8080/api/list-connections?pid=1234&limit=50"
-```
+# Install dependencies (Ubuntu/Debian)
+sudo apt install -y golang-go clang libbpf-dev linux-headers-$(uname -r)
 
-#### POST /api/list-connections
+# Build and run
+make build
+sudo ./bin/ebpf-server
 
-List all tracked connection events with JSON request body (alternative to GET).
-
-**Request Body:**
-```json
-{
-  "pid": 1234,    // Optional: Filter by PID
-  "limit": 100    // Optional: Limit results per PID
-}
-```
-
-**Response (both GET and POST):**
-```json
-{
-  "total_pids": 3,
-  "connections": {
-    "1234": [
-      {
-        "pid": 1234,
-        "command": "curl",
-        "destination": "93.184.216.34:80",
-        "protocol": "TCP",
-        "return_code": 0,
-        "timestamp": "2025-07-31T14:30:56Z"
-      }
-    ]
-  },
-  "truncated": false,
-  "message": "Found 1 total connections across 1 processes"
-}
-```
-
-#### GET /
-
-Service information and API documentation.
-
-**Response:**
-```json
-{
-  "service": "eBPF Network Monitor",
-  "version": "v1.0.0",
-  "description": "HTTP API for eBPF-based network connection monitoring",
-  "endpoints": {
-    "POST /api/connection-summary": "Get connection summary for a process",
-    "GET|POST /api/list-connections": "List network connections",
-    "GET /health": "Service health check"
-  }
-}
-```
-
-### Example Usage
-
-**Start the server:**
-```bash
-# Build and run (requires root for eBPF)
-sudo make run
-
-# Or run directly
-sudo ./bin/ebpf-server -addr :8080
-```
-
-**Test the API:**
-```bash
-# Check health
+# Test the API
 curl http://localhost:8080/health
-
-# Get connection summary for a specific command
-curl -X POST http://localhost:8080/api/connection-summary \
-  -H "Content-Type: application/json" \
-  -d '{
-    "command": "curl",
-    "duration": 30
-  }'
-
-# List all connections
-curl http://localhost:8080/api/list-connections
-
-# List connections for specific PID with limit
-curl "http://localhost:8080/api/list-connections?pid=1234&limit=10"
+curl "http://localhost:8080/api/events?type=connection&limit=10"
+curl "http://localhost:8080/api/programs"
 ```
 
-**Integration with monitoring tools:**
-```bash
-# Use with Prometheus/monitoring
-curl -s http://localhost:8080/api/connection-summary \
-  -d '{"command":"nginx","duration":60}' | jq '.total_attempts'
+**📚 [View Interactive API Documentation](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)** - Test APIs directly in your browser
 
-# Use with scripts
-CONNECTIONS=$(curl -s http://localhost:8080/api/list-connections | jq '.total_pids')
-echo "Currently tracking $CONNECTIONS processes"
+## Architecture
+
+**Modular, interface-based monitoring system** with clean separation of concerns:
+
+```
+┌───────────────────────────────────────────────────────────┐
+│                        System Layer                       │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │                  Manager                            │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │  │
+│  │  │ Connection  │  │ Packet Drop │  │   Your New  │  │  │
+│  │  │ Program     │  │ Program     │  │   Program   │  │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  │  │
+│  └─────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────┘
+                            │
+                   ┌────────┴────────┐
+                   │                 │
+          ┌────────▼────────┐  ┌─────▼─────┐
+          │ Event Storage   │  │ HTTP API  │
+          │ (Unified)       │  │ Handlers  │
+          └─────────────────┘  └───────────┘
 ```
 
-## Testing
+**Core Components:**
+- **Core Interfaces**: Define contracts for Events, Programs, Managers, and Storage
+- **Event System**: Unified event creation, streaming, and storage with `BaseEvent`
+- **Program Manager**: Coordinates program lifecycle and provides unified event streams
+- **Storage Layer**: Persistent event storage with query capabilities  
+- **API Layer**: HTTP endpoints for querying events and program status
+- **System Layer**: Top-level coordination and initialization
 
-To test that the server is working correctly:
+## Extending the System
 
-1. **Run the unit tests:**
-   ```bash
-   make test
-   ```
+📚 **[Complete Development Guide](docs/program-development.md)** - Detailed guide for creating new eBPF monitoring programs
 
-2. **Test the HTTP API server:**
-   ```bash
-   # Start the server (requires root)
-   sudo make run
-   
-   # Test from another terminal
-   curl http://localhost:8080/health
-   
-   # Test connection summary
-   curl -X POST http://localhost:8080/api/connection-summary \
-     -H "Content-Type: application/json" \
-     -d '{"command":"test","duration":30}'
-   
-   # Test list connections
-   curl http://localhost:8080/api/list-connections
-   ```
+### Quick Example: Create a New Monitoring Program
 
-3. **Generate network activity for monitoring:**
-   ```bash
-   # In another terminal, create some connections
-   curl -s http://httpbin.org/ip > /dev/null
-   curl -s https://www.google.com > /dev/null
-   
-   # Check captured connections
-   curl http://localhost:8080/api/list-connections | jq .
-   ```
-
-4. **Test with specific processes:**
-   ```bash
-   # Get summary for curl commands
-   curl -X POST http://localhost:8080/api/connection-summary \
-     -H "Content-Type: application/json" \
-     -d '{"command":"curl","duration":60}'
-   
-   # Monitor specific PID
-   curl -X POST http://localhost:8080/api/connection-summary \
-     -H "Content-Type: application/json" \
-     -d '{"pid":1234,"duration":30}'
-   ```
-
-**Note:** 
-- The API captures `connect()` syscall attempts, useful for monitoring **persistent services** and **connection patterns**
-- For short-lived processes like individual curl commands, use the **command name** instead of PID
-- Current eBPF program monitors TCP `connect()` syscalls only (not ICMP like ping)
-- API responses include human-readable messages along with structured data
-
-## Protocol Detection and Testing
-
-The HTTP API server includes enhanced protocol detection that identifies connection types and provides detailed network information:
-
-### Supported Protocols
-
-**✅ Captured Protocols:**
-- **TCP** - All TCP connections (HTTP, HTTPS, SSH, etc.)
-- **UDP** - UDP connections that use `connect()` (DNS queries, some applications)
-- **Unix Domain Sockets** - Local IPC connections
-
-**❌ Not Captured:**
-- **UDP with sendto()** - Most UDP traffic uses `sendto()` without `connect()`
-- **Raw sockets** - Don't use the `connect()` syscall
-- **ICMP** - ping and other ICMP traffic
-
-### Protocol Detection Features
-
-- **Port-based heuristics** - Intelligently identifies protocols by destination port
-- **Socket type classification** - Distinguishes STREAM (TCP) vs DGRAM (UDP)
-- **Wall clock timestamps** - Human-readable time conversion from boot time
-- **Complete connection details** - Source process, destination IP/port, protocol info
-
-### Testing Protocol Detection
+### 1. Create a New Monitoring Program
 
 ```bash
-# Start the HTTP API server
-sudo make run
-
-# In another terminal, generate test connections
-python3 -c "
-import socket
-import time
-
-print('Testing TCP connection...')
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(('httpbin.org', 80))
-s.close()
-
-print('Testing UDP with connect()...')
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.connect(('8.8.8.8', 53))  # This will be captured
-s.close()
-
-print('Testing UDP with sendto()...')
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.sendto(b'test', ('8.8.8.8', 53))  # This will NOT be captured
-s.close()
-
-print('Test complete')
-"
-
-# Check captured connections using the HTTP API
-curl http://localhost:8080/api/list-connections | jq .
-
-# Get summary for python connections
-curl -X POST http://localhost:8080/api/connection-summary \
-  -H "Content-Type: application/json" \
-  -d '{"command":"python3","duration":60}'
+mkdir -p internal/programs/your_monitor
 ```
 
-### Example Protocol Detection Output
+### 2. Implement Your Program
 
-```json
-{
-  "pid": 1234,
-  "command": "python3",
-  "destination_ip": "8.8.8.8",
-  "destination_port": 53,
-  "destination": "8.8.8.8:53",
-  "address_family": 2,
-  "protocol": "UDP",
-  "socket_type": "DGRAM",
-  "wall_time": "2025-07-29T14:30:56Z"
+Create `internal/programs/your_monitor/your_monitor.go`:
+
+```go
+package your_monitor
+
+import (
+    "context"
+    "encoding/binary"
+    "fmt"
+    
+    "github.com/srodi/ebpf-server/internal/core"
+    "github.com/srodi/ebpf-server/internal/events"
+    "github.com/srodi/ebpf-server/internal/programs"
+    "github.com/srodi/ebpf-server/pkg/logger"
+)
+
+const (
+    ProgramName        = "your_monitor"
+    ProgramDescription = "Monitors your custom events"
+    ObjectPath         = "bpf/your_monitor.o"
+    TracepointProgram  = "trace_your_event"
+    EventsMapName      = "events"
+)
+
+type Program struct {
+    *programs.BaseProgram
+}
+
+func NewProgram() *Program {
+    base := programs.NewBaseProgram(ProgramName, ProgramDescription, ObjectPath)
+    return &Program{BaseProgram: base}
+}
+
+func (p *Program) Attach(ctx context.Context) error {
+    if !p.IsLoaded() {
+        return fmt.Errorf("program not loaded")
+    }
+    
+    logger.Debugf("Attaching %s program", ProgramName)
+    
+    if err := p.AttachTracepoint("syscalls", "your_event", TracepointProgram); err != nil {
+        return fmt.Errorf("failed to attach: %w", err)
+    }
+    
+    if err := p.StartEventProcessing(ctx, EventsMapName, p.parseEvent); err != nil {
+        return fmt.Errorf("failed to start processing: %w", err)
+    }
+    
+    p.SetAttached(true)
+    return nil
+}
+
+func (p *Program) parseEvent(data []byte) (core.Event, error) {
+    if len(data) < 24 {
+        return nil, fmt.Errorf("insufficient data: %d bytes", len(data))
+    }
+    
+    pid := binary.LittleEndian.Uint32(data[0:4])
+    timestamp := binary.LittleEndian.Uint64(data[4:12])
+    command := extractNullTerminatedString(data[12:])
+    
+    metadata := map[string]interface{}{
+        "custom_field": "custom_value",
+    }
+    
+    return events.NewBaseEvent(ProgramName, pid, command, timestamp, metadata), nil
 }
 ```
+### 3. Register Your Program
 
-### Connection Types You'll See
+Add to `internal/system/system.go` in the `Initialize()` method:
 
-1. **DNS Queries** - `127.0.0.53:53` (local resolver) or `192.168.x.x:53` (network DNS)
-2. **HTTP/HTTPS** - Various IPs on ports 80/443 with TCP protocol
-3. **System Services** - Unix domain sockets with `address_family: 1`
-4. **Application Traffic** - Protocol determined by port (SSH=22, HTTP=80, HTTPS=443, etc.)
+```go
+// Register your program
+yourProgram := your_monitor.NewProgram()
+if err := s.manager.RegisterProgram(yourProgram); err != nil {
+    return fmt.Errorf("failed to register your_monitor: %w", err)
+}
+logger.Debugf("✅ Registered your monitoring program")
+```
+
+### 4. Create eBPF C Code
+
+Create `bpf/your_monitor.c`:
+
+```c
+#include "vmlinux.h"
+#include "bpf_helpers.h"
+#include "bpf_tracing.h"
+
+struct your_event {
+    u32 pid;
+    u64 timestamp;
+    char comm[16];
+    char custom_field[64];
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 256 * 1024);
+} events SEC(".maps");
+
+SEC("tracepoint/syscalls/your_event")
+int trace_your_event(void *ctx) {
+    struct your_event *event;
+    
+    event = bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+    if (!event) {
+        return 0;
+    }
+    
+    event->pid = bpf_get_current_pid_tgid() >> 32;
+    event->timestamp = bpf_ktime_get_ns();
+    bpf_get_current_comm(&event->comm, sizeof(event->comm));
+    
+    // Add your custom logic here
+    
+    bpf_ringbuf_submit(event, 0);
+    return 0;
+}
+
+char LICENSE[] SEC("license") = "GPL";
+```
+
+## API Features
+
+- **Unified Event API**: Single `/api/events` endpoint for all monitoring data
+- **Flexible Filtering**: Filter by event type, PID, command, and time windows
+- **Program Status**: View program status and metrics via `/api/programs`
+- **Auto-Generated Documentation**: OpenAPI 3.0 spec from code annotations
+- **Interactive Testing**: Built-in Swagger UI for API exploration
+
+## API Endpoints
+
+### Core Endpoints
+
+- **`GET /health`** - System health and status
+- **`GET /api/events`** - Query events with filtering support
+- **`GET /api/programs`** - List all programs and their status
+
+### Event Query Examples
+
+```bash
+# Get all connection events from the last hour
+curl "http://localhost:8080/api/events?type=connection&since=2023-01-01T00:00:00Z"
+
+# Get events for a specific process
+curl "http://localhost:8080/api/events?pid=1234&limit=50"
+
+# Get packet drop events with command filter
+curl "http://localhost:8080/api/events?type=packet_drop&command=curl"
+```
+
+### Query Parameters
+
+- `type`: Event type filter (e.g., "connection", "packet_drop")
+- `pid`: Process ID filter
+- `command`: Command name filter
+- `since`: RFC3339 timestamp for start time
+- `until`: RFC3339 timestamp for end time
+- `limit`: Maximum results (default: 100)
 
 ## Development
 
-### Building
-
 ```bash
-# Build release version (production)
-make build
+# Development build with debug logging
+make build-dev && sudo ./bin/ebpf-server-dev
 
-# Build development version with debug symbols and verbose debug logging
-make build-dev
+# Generate API docs
+make docs
 
-# Build and run in development mode
-make run-dev
-```
-
-**Debug Logging:**
-- `make build`: Production build with minimal logging (INFO level and above)
-- `make build-dev`: Development build with extensive debug logging showing:
-  - Raw eBPF event data and parsing details
-  - Connection tracking and storage operations
-  - API request processing and response details
-  - Ring buffer event processing information
-
-### Testing
-
-```bash
-# Run all unit tests
+# Run tests
 make test
 
-# Run tests with race detection
-make test-race
-
-# Test the HTTP API integration
-curl http://localhost:8080/health
-```
-
-**Test Coverage:**
-- **Logger Package**: Debug level functionality, global logger behavior, level switching
-- **BPF Types**: Event parsing, IP conversion, protocol/socket type detection, time conversion
-- **API Handlers**: HTTP endpoints, request/response handling, error cases, input validation
-- **HTTP Server**: Route handling, timeouts, integration testing
-- **Integration Testing**: API endpoint testing with various request types
-
-### Code Quality
-
-```bash
-# Format code
-make fmt
-
-# Run linters
-make lint
-```
-
-### Development Setup
-
-```bash
-# Setup development tools
-make dev-setup
+# Build eBPF programs
+make build-bpf
 ```
 
 ## Project Structure
 
 ```
-.
-├── bpf/                    # eBPF programs (C)
-│   └── connection.c        # Connection monitoring eBPF program
-├── cmd/
-│   └── server/
-│       ├── main.go        # Application entry point
-│       └── debug.go       # Debug build configuration
+├── cmd/server/           # Main application entry point
 ├── internal/
-│   ├── api/               # HTTP API handlers and routes
-│   │   ├── handlers.go    # HTTP request handlers
-│   │   └── handlers_test.go # API handler unit tests
-│   └── bpf/               # eBPF program loader and utilities
-│       ├── loader.go      # eBPF program loading logic
-│       ├── types.go       # eBPF data structures
-│       └── types_test.go  # BPF types unit tests
-├── pkg/
-│   └── logger/            # Custom logging package
-│       ├── logger.go      # Logger implementation
-│       └── logger_test.go # Logger unit tests
-├── go.mod                 # Go module definition
-├── go.sum                 # Go module checksums
-├── Makefile              # Build automation
-└── README.md             # This file
+│   ├── core/            # Core interfaces and types
+│   ├── events/          # Event system (BaseEvent, streams)
+│   ├── programs/        # eBPF program implementations
+│   │   ├── base.go      # BaseProgram foundation
+│   │   ├── manager.go   # Program manager
+│   │   ├── connection/  # Network connection monitoring
+│   │   └── packet_drop/ # Packet drop monitoring
+│   ├── storage/         # Event storage and querying
+│   ├── api/            # HTTP API handlers
+│   └── system/         # System initialization and coordination
+├── bpf/                # eBPF C programs and headers
+├── docs/               # Documentation and API specs
+└── pkg/logger/         # Logging utilities
 ```
 
-## Troubleshooting
+## Requirements
 
-### Common Issues
+- **Linux kernel 4.18+** with eBPF support
+- **Root privileges** for eBPF program loading
+- **Dependencies**: Go 1.23+, Clang, libbpf-dev, kernel headers
 
-1. **Permission Denied**
-   - eBPF programs require root privileges
-   - Run with `sudo` or as root user
-
-2. **eBPF Program Load Failed**
-   - Check kernel version (requires 4.18+)
-   - Ensure kernel headers are installed
-   - Verify BTF (BPF Type Format) support
-
-3. **Compilation Errors**
-   - Install clang and libbpf development packages
-   - Check that kernel headers match running kernel
-
-### Debug Mode
-
-Run with debug symbols and verbose logging for detailed troubleshooting:
-```bash
-make build-dev
-sudo ./bin/ebpf-server-dev
-```
-
-Debug builds include detailed logging of:
-- eBPF event processing and data parsing
-- Ring buffer operations and raw event data  
-- Connection tracking and storage operations
-- API request/response processing
-
-### Logs
-
-The server logs to stdout. Check for eBPF loading errors and HTTP server startup messages.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting: `make test lint`
-5. Commit your changes
-6. Push to your fork
-7. Create a Pull Request
-
-## Security Considerations
-
-- This server requires root privileges to load eBPF programs
-- eBPF programs run in kernel space and should be thoroughly tested
-- Network monitoring may capture sensitive information
-- Consider running in a containerized environment for isolation
+For detailed setup: [docs/setup.md](docs/setup.md) | Development guide: [docs/program-development.md](docs/program-development.md)
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Related Projects
-
-- [Cilium eBPF Library](https://github.com/cilium/ebpf) - Go eBPF library used in this project
-- [eBPF Documentation](https://ebpf.io/) - eBPF learning resources
-- [BPFTrace](https://github.com/iovisor/bpftrace) - High-level tracing language for eBPF
-- [Falco](https://falco.org/) - Cloud-native runtime security with eBPF
-
-## Support
-
-For questions and support:
-- Create an issue on GitHub
-- Check the troubleshooting section above
-- Review eBPF and kernel documentation for system-specific issues
+MIT License - see [LICENSE](LICENSE) file.

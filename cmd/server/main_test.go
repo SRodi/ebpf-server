@@ -9,7 +9,19 @@ import (
 	"time"
 
 	"github.com/srodi/ebpf-server/internal/api"
+	"github.com/srodi/ebpf-server/internal/system"
 )
+
+// setupTestSystem creates a mock system for testing
+func setupTestSystem() *system.System {
+	// Create a test system
+	testSystem := system.NewSystem()
+	
+	// Initialize the API with the test system
+	api.Initialize(testSystem)
+	
+	return testSystem
+}
 
 func TestHTTPServerSetup(t *testing.T) {
 	// Create a test HTTP server with our routes
@@ -29,11 +41,13 @@ func TestHTTPServerSetup(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		if _, err := w.Write([]byte(`{
 			"service": "eBPF Network Monitor",
 			"version": "v1.0.0",
 			"description": "HTTP API for eBPF-based network connection monitoring"
-		}`))
+		}`)); err != nil {
+			http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		}
 	})
 
 	// Test server creation
@@ -62,6 +76,9 @@ func TestHTTPServerSetup(t *testing.T) {
 }
 
 func TestHTTPHealthEndpoint(t *testing.T) {
+	// Setup test system
+	_ = setupTestSystem()
+	
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", api.HandleHealth)
 
@@ -78,13 +95,13 @@ func TestHTTPHealthEndpoint(t *testing.T) {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	var healthResponse map[string]string
+	var healthResponse map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&healthResponse); err != nil {
 		t.Fatalf("failed to decode JSON response: %v", err)
 	}
 
 	if healthResponse["status"] != "healthy" {
-		t.Errorf("expected status 'healthy', got '%s'", healthResponse["status"])
+		t.Errorf("expected status 'healthy', got '%v'", healthResponse["status"])
 	}
 }
 
@@ -112,24 +129,19 @@ func TestHTTPAPIEndpoints(t *testing.T) {
 }
 
 func TestHTTPConnectionSummaryValidation(t *testing.T) {
+	// Setup test system
+	_ = setupTestSystem()
+	
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/connection-summary", api.HandleConnectionSummary)
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	// Test invalid request (missing duration)
-	reqData := map[string]interface{}{
-		"pid": 1234,
-		// Missing duration
-	}
+	// Test invalid JSON request
+	invalidJSON := `{"pid": "invalid_number", "duration_seconds": "not_a_number"`
 
-	reqBody, err := json.Marshal(reqData)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	resp, err := http.Post(server.URL+"/api/connection-summary", "application/json", bytes.NewBuffer(reqBody))
+	resp, err := http.Post(server.URL+"/api/connection-summary", "application/json", bytes.NewBufferString(invalidJSON))
 	if err != nil {
 		t.Fatalf("failed to make POST request: %v", err)
 	}

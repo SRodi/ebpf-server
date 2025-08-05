@@ -1,0 +1,497 @@
+basePath: /
+definitions:
+  internal_api.ConnectionListResponse:
+    properties:
+      events_by_pid:
+        additionalProperties:
+          items: {}
+          type: array
+        description: Events grouped by PID
+        type: object
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_events:
+        description: Total number of events
+        example: 10
+        type: integer
+      total_pids:
+        description: Number of unique PIDs
+        example: 3
+        type: integer
+    type: object
+  internal_api.ConnectionSummaryRequest:
+    properties:
+      command:
+        description: Command name
+        example: curl
+        type: string
+      duration_seconds:
+        description: Duration in seconds
+        example: 60
+        type: integer
+      pid:
+        description: Process ID
+        example: 1234
+        type: integer
+    type: object
+  internal_api.ConnectionSummaryResponse:
+    properties:
+      command:
+        description: Command name
+        example: curl
+        type: string
+      count:
+        description: Number of connection events
+        example: 5
+        type: integer
+      duration_seconds:
+        description: Duration in seconds
+        example: 60
+        type: integer
+      pid:
+        description: Process ID
+        example: 1234
+        type: integer
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+    type: object
+  internal_api.PacketDropListResponse:
+    properties:
+      events_by_pid:
+        additionalProperties:
+          items: {}
+          type: array
+        description: Events grouped by PID
+        type: object
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_events:
+        description: Total number of events
+        example: 7
+        type: integer
+      total_pids:
+        description: Number of unique PIDs
+        example: 2
+        type: integer
+    type: object
+  internal_api.PacketDropSummaryRequest:
+    properties:
+      command:
+        description: Command name
+        example: nginx
+        type: string
+      duration_seconds:
+        description: Duration in seconds
+        example: 60
+        type: integer
+      pid:
+        description: Process ID
+        example: 1234
+        type: integer
+    type: object
+  internal_api.PacketDropSummaryResponse:
+    properties:
+      command:
+        description: Command name
+        example: nginx
+        type: string
+      count:
+        description: Number of packet drop events
+        example: 3
+        type: integer
+      duration_seconds:
+        description: Duration in seconds
+        example: 60
+        type: integer
+      pid:
+        description: Process ID
+        example: 1234
+        type: integer
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@example.com
+    name: API Support
+    url: https://github.com/srodi/ebpf-server/issues
+  description: HTTP API for eBPF-based network connection and packet drop monitoring
+  license:
+    name: MIT
+    url: https://github.com/srodi/ebpf-server/blob/main/LICENSE
+  title: eBPF Network Monitor API
+  version: 1.0.0
+paths:
+  /api/connection-summary:
+    get:
+      consumes:
+      - application/json
+      description: Get count of connection events filtered by PID, command, and time
+        window
+      parameters:
+      - description: Process ID (GET only)
+        in: query
+        name: pid
+        type: integer
+      - description: Command name (GET only)
+        in: query
+        name: command
+        type: string
+      - description: 'Duration in seconds (GET only, default: 60)'
+        in: query
+        name: duration_seconds
+        type: integer
+      - description: Connection summary request (POST only)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.ConnectionSummaryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Connection statistics
+          schema:
+            $ref: '#/definitions/internal_api.ConnectionSummaryResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get connection statistics
+      tags:
+      - connections
+    post:
+      consumes:
+      - application/json
+      description: Get count of connection events filtered by PID, command, and time
+        window
+      parameters:
+      - description: Process ID (GET only)
+        in: query
+        name: pid
+        type: integer
+      - description: Command name (GET only)
+        in: query
+        name: command
+        type: string
+      - description: 'Duration in seconds (GET only, default: 60)'
+        in: query
+        name: duration_seconds
+        type: integer
+      - description: Connection summary request (POST only)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.ConnectionSummaryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Connection statistics
+          schema:
+            $ref: '#/definitions/internal_api.ConnectionSummaryResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get connection statistics
+      tags:
+      - connections
+  /api/events:
+    get:
+      consumes:
+      - application/json
+      description: Get events filtered by type, PID, command, time range, and limit
+      parameters:
+      - description: Event type (connection, packet_drop)
+        in: query
+        name: type
+        type: string
+      - description: Process ID
+        in: query
+        name: pid
+        type: integer
+      - description: Command name
+        in: query
+        name: command
+        type: string
+      - description: Start time (RFC3339 format)
+        in: query
+        name: since
+        type: string
+      - description: End time (RFC3339 format)
+        in: query
+        name: until
+        type: string
+      - description: 'Maximum number of events to return (default: 100)'
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Filtered events
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Query events
+      tags:
+      - events
+  /api/list-connections:
+    get:
+      consumes:
+      - application/json
+      description: Get recent connection events grouped by PID
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Connection events
+          schema:
+            $ref: '#/definitions/internal_api.ConnectionListResponse'
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List connection events
+      tags:
+      - connections
+  /api/list-packet-drops:
+    get:
+      consumes:
+      - application/json
+      description: Get recent packet drop events grouped by PID
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Packet drop events
+          schema:
+            $ref: '#/definitions/internal_api.PacketDropListResponse'
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List packet drop events
+      tags:
+      - packet_drops
+  /api/packet-drop-summary:
+    get:
+      consumes:
+      - application/json
+      description: Get count of packet drop events filtered by PID, command, and time
+        window
+      parameters:
+      - description: Process ID (GET only)
+        in: query
+        name: pid
+        type: integer
+      - description: Command name (GET only)
+        in: query
+        name: command
+        type: string
+      - description: 'Duration in seconds (GET only, default: 60)'
+        in: query
+        name: duration_seconds
+        type: integer
+      - description: Packet drop summary request (POST only)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.PacketDropSummaryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Packet drop statistics
+          schema:
+            $ref: '#/definitions/internal_api.PacketDropSummaryResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get packet drop statistics
+      tags:
+      - packet_drops
+    post:
+      consumes:
+      - application/json
+      description: Get count of packet drop events filtered by PID, command, and time
+        window
+      parameters:
+      - description: Process ID (GET only)
+        in: query
+        name: pid
+        type: integer
+      - description: Command name (GET only)
+        in: query
+        name: command
+        type: string
+      - description: 'Duration in seconds (GET only, default: 60)'
+        in: query
+        name: duration_seconds
+        type: integer
+      - description: Packet drop summary request (POST only)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.PacketDropSummaryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Packet drop statistics
+          schema:
+            $ref: '#/definitions/internal_api.PacketDropSummaryResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get packet drop statistics
+      tags:
+      - packet_drops
+  /api/programs:
+    get:
+      consumes:
+      - application/json
+      description: Get the status and information of all loaded eBPF programs
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of eBPF programs
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List eBPF programs
+      tags:
+      - programs
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Get the health status of the eBPF monitoring system
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Health status
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - health
+swagger: "2.0"
