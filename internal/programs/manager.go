@@ -162,12 +162,16 @@ func (m *Manager) GetProgramStatus() []core.ProgramStatus {
 	status := make([]core.ProgramStatus, len(m.programs))
 	
 	for i, program := range m.programs {
+		totalEvents, droppedEvents, dropRate := program.GetStats()
+		
 		status[i] = core.ProgramStatus{
-			Name:        program.Name(),
-			Description: program.Description(),
-			Loaded:      program.IsLoaded(),
-			Attached:    program.IsAttached(),
-			EventCount:  0, // TODO: Add event counting
+			Name:         program.Name(),
+			Description:  program.Description(),
+			Loaded:       program.IsLoaded(),
+			Attached:     program.IsAttached(),
+			EventCount:   int64(totalEvents),
+			DroppedCount: int64(droppedEvents),
+			DropRate:     dropRate,
 		}
 	}
 	

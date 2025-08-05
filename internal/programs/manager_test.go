@@ -18,14 +18,15 @@ type MockProgram struct {
 	stream      *events.ChannelStream
 }
 
-func (m *MockProgram) Name() string                              { return m.name }
-func (m *MockProgram) Description() string                      { return m.description }
-func (m *MockProgram) Load(ctx context.Context) error           { m.loaded = true; return nil }
-func (m *MockProgram) Attach(ctx context.Context) error         { m.attached = true; return nil }
-func (m *MockProgram) Detach(ctx context.Context) error         { m.attached = false; return nil }
-func (m *MockProgram) IsLoaded() bool                           { return m.loaded }
-func (m *MockProgram) IsAttached() bool                         { return m.attached }
-func (m *MockProgram) EventStream() core.EventStream            { return m.stream }
+func (m *MockProgram) Name() string                        { return m.name }
+func (m *MockProgram) Description() string                 { return m.description }
+func (m *MockProgram) Load(ctx context.Context) error      { m.loaded = true; return nil }
+func (m *MockProgram) Attach(ctx context.Context) error    { m.attached = true; return nil }
+func (m *MockProgram) Detach(ctx context.Context) error    { m.attached = false; return nil }
+func (m *MockProgram) IsLoaded() bool                      { return m.loaded }
+func (m *MockProgram) IsAttached() bool                    { return m.attached }
+func (m *MockProgram) EventStream() core.EventStream       { return m.stream }
+func (m *MockProgram) GetStats() (uint64, uint64, float64) { return 0, 0, 0.0 }
 
 // TestManagerBasic tests basic Manager functionality
 func TestManagerBasic(t *testing.T) {
@@ -50,19 +51,19 @@ func TestManagerBasic(t *testing.T) {
 // TestManagerRegisterProgram tests program registration
 func TestManagerRegisterProgram(t *testing.T) {
 	manager := NewManager()
-	
+
 	// Create mock programs
 	stream1 := events.NewChannelStream(10)
 	stream2 := events.NewChannelStream(10)
-	
+
 	program1 := &MockProgram{
 		name:        "connection",
 		description: "Connection monitoring program",
 		stream:      stream1,
 	}
-	
+
 	program2 := &MockProgram{
-		name:        "packet_drop", 
+		name:        "packet_drop",
 		description: "Packet drop monitoring program",
 		stream:      stream2,
 	}
@@ -187,14 +188,14 @@ func TestManagerEventStream(t *testing.T) {
 	// Create mock programs with streams
 	stream1 := events.NewChannelStream(10)
 	stream2 := events.NewChannelStream(10)
-	
+
 	program1 := &MockProgram{
 		name:   "prog1",
 		stream: stream1,
 	}
-	
+
 	program2 := &MockProgram{
-		name:   "prog2", 
+		name:   "prog2",
 		stream: stream2,
 	}
 
@@ -209,7 +210,7 @@ func TestManagerEventStream(t *testing.T) {
 	if err := manager.LoadAll(ctx); err != nil {
 		t.Fatalf("failed to load programs: %v", err)
 	}
-	
+
 	if err := manager.AttachAll(ctx); err != nil {
 		t.Fatalf("failed to attach programs: %v", err)
 	}
@@ -230,7 +231,7 @@ func TestManagerEventStream(t *testing.T) {
 	// Try to receive events from unified stream
 	// Note: This test might be flaky depending on timing
 	receivedEvents := 0
-	
+
 	// Use select with timeout to avoid hanging
 eventLoop:
 	for receivedEvents < 2 {
@@ -257,7 +258,7 @@ eventLoop:
 // TestManagerDuplicateRegistration tests handling of duplicate program registration
 func TestManagerDuplicateRegistration(t *testing.T) {
 	manager := NewManager()
-	
+
 	stream := events.NewChannelStream(10)
 	program := &MockProgram{
 		name:   "test",
@@ -312,7 +313,7 @@ func TestManagerConcurrency(t *testing.T) {
 				name:   fmt.Sprintf("program_%d", id),
 				stream: stream,
 			}
-			
+
 			errors <- manager.RegisterProgram(program)
 		}(i)
 	}

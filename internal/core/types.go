@@ -91,6 +91,9 @@ type Program interface {
 	
 	// EventStream returns a stream of events from this program
 	EventStream() EventStream
+	
+	// GetStats returns event processing statistics
+	GetStats() (totalEvents, droppedEvents uint64, dropRate float64)
 }
 
 // Manager orchestrates multiple eBPF programs and provides a unified interface.
@@ -143,9 +146,11 @@ type Query struct {
 
 // ProgramStatus represents the current state of a program.
 type ProgramStatus struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Loaded      bool   `json:"loaded"`
-	Attached    bool   `json:"attached"`
-	EventCount  int64  `json:"event_count"`
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	Loaded       bool    `json:"loaded"`
+	Attached     bool    `json:"attached"`
+	EventCount   int64   `json:"event_count"`
+	DroppedCount int64   `json:"dropped_count"`
+	DropRate     float64 `json:"drop_rate"`
 }

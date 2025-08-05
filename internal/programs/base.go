@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -12,6 +13,16 @@ import (
 	"github.com/srodi/ebpf-server/internal/core"
 	"github.com/srodi/ebpf-server/internal/events"
 	"github.com/srodi/ebpf-server/pkg/logger"
+)
+
+// Constants for backpressure handling
+const (
+	// AlertThreshold: Alert when drop rate exceeds 1% over a window
+	DropRateAlertThreshold = 0.01
+	// Alert interval: Don't spam alerts more than once per minute
+	AlertCooldownDuration = time.Minute
+	// Event window for calculating drop rate
+	DropRateWindowSize = 1000
 )
 
 // BaseProgram provides common functionality for eBPF programs.
@@ -25,6 +36,11 @@ type BaseProgram struct {
 	loaded      bool
 	attached    bool
 	mu          sync.RWMutex
+	
+	// Event processing metrics
+	droppedEvents uint64
+	totalEvents   uint64
+	lastAlertTime time.Time
 }
 
 // NewBaseProgram creates a new base program.
@@ -90,6 +106,46 @@ func (p *BaseProgram) EventStream() core.EventStream {
 	return p.eventStream
 }
 
+// GetStats returns event processing statistics.
+func (p *BaseProgram) GetStats() (totalEvents, droppedEvents uint64, dropRate float64) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	
+	totalEvents = p.totalEvents
+	droppedEvents = p.droppedEvents
+	
+	if totalEvents > 0 {
+		dropRate = float64(droppedEvents) / float64(totalEvents)
+	}
+	
+	return totalEvents, droppedEvents, dropRate
+}
+
+// checkDropRateAndAlert monitors drop rate and triggers alerts when necessary.
+func (p *BaseProgram) checkDropRateAndAlert() {
+	total, dropped, dropRate := p.GetStats()
+	
+	// Only check if we have enough events to make a meaningful assessment
+	if total < DropRateWindowSize {
+		return
+	}
+	
+	// Check if drop rate exceeds threshold and we haven't alerted recently
+	if dropRate > DropRateAlertThreshold {
+		now := time.Now()
+		if now.Sub(p.lastAlertTime) > AlertCooldownDuration {
+			logger.Errorf("HIGH EVENT DROP RATE DETECTED in %s: %.2f%% (%d/%d events dropped). "+
+				"This indicates system overload or insufficient buffer capacity. "+
+				"Consider increasing buffer sizes or optimizing event processing.",
+				p.name, dropRate*100, dropped, total)
+			
+			p.mu.Lock()
+			p.lastAlertTime = now
+			p.mu.Unlock()
+		}
+	}
+}
+
 // Detach detaches the program from all kernel hooks.
 func (p *BaseProgram) Detach(ctx context.Context) error {
 	p.mu.Lock()
@@ -111,6 +167,11 @@ func (p *BaseProgram) Detach(ctx context.Context) error {
 	
 	// Close event stream
 	p.eventStream.Close()
+	
+	// Reset event statistics
+	p.droppedEvents = 0
+	p.totalEvents = 0
+	p.lastAlertTime = time.Time{}
 	
 	logger.Debugf("Detached program %s", p.name)
 	return nil
@@ -172,9 +233,28 @@ func (p *BaseProgram) StartRingBufferReader(mapName string, parser core.EventPar
 				continue
 			}
 			
-			// Send to event stream
+			// Track total events
+			p.mu.Lock()
+			p.totalEvents++
+			currentTotal := p.totalEvents
+			p.mu.Unlock()
+			
+			// Send to event stream with backpressure handling
 			if !p.eventStream.Send(event) {
-				logger.Debugf("Event stream full for %s, dropping event", p.name)
+				// Event dropped due to full buffer - this is a critical issue
+				p.mu.Lock()
+				p.droppedEvents++
+				droppedCount := p.droppedEvents
+				p.mu.Unlock()
+				
+				// Log error (not just debug) since this represents data loss
+				logger.Errorf("Event stream full for %s, DROPPED EVENT (PID: %d, Type: %s). "+
+					"Total dropped: %d/%d events. This indicates backpressure - "+
+					"consider increasing buffer size or optimizing downstream processing.",
+					p.name, event.PID(), event.Type(), droppedCount, currentTotal)
+				
+				// Check if we need to trigger high drop rate alerts
+				p.checkDropRateAndAlert()
 			}
 		}
 	}()

@@ -111,6 +111,7 @@ func (m *MockProgram) Detach(ctx context.Context) error         { m.attached = f
 func (m *MockProgram) IsLoaded() bool                           { return m.loaded }
 func (m *MockProgram) IsAttached() bool                         { return m.attached }
 func (m *MockProgram) EventStream() EventStream                 { return m.stream }
+func (m *MockProgram) GetStats() (uint64, uint64, float64)      { return 0, 0, 0.0 }
 
 // MockManager implements Manager for testing
 type MockManager struct {
