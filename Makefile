@@ -143,7 +143,7 @@ clean:
 .PHONY: docs
 docs:
 	@command -v $(shell go env GOPATH)/bin/swag >/dev/null 2>&1 || { echo "Installing swag..."; go install github.com/swaggo/swag/cmd/swag@latest; }
-	$(shell go env GOPATH)/bin/swag init -g internal/api/docs.go -o docs/swagger
+	$(shell go env GOPATH)/bin/swag init -g internal/api/handlers.go -o docs/swagger --parseDependency --parseInternal
 	@echo "API documentation generated at docs/swagger/"
 	@echo "Interactive docs: http://localhost:8080/docs/ (when server is running)"
 	@echo "External docs: https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger.json"

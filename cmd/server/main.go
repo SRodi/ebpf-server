@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/srodi/ebpf-server/internal/api"
-	"github.com/srodi/ebpf-server/internal/bpf"
+	"github.com/srodi/ebpf-server/internal/ebpf"
 	"github.com/srodi/ebpf-server/pkg/logger"
 	
 	httpSwagger "github.com/swaggo/http-swagger"
@@ -24,9 +24,18 @@ func main() {
 	)
 	flag.Parse()
 
-	// Load and attach eBPF programs
-	if err := bpf.LoadAndAttach(); err != nil {
-		logger.Fatalf("failed to load eBPF: %v", err)
+	// Check if debug logging is enabled
+	logger.Info("Starting eBPF Network Monitor...")
+	logger.Debug("Debug logging is enabled")
+	logger.Debugf("Debug logging test - IsDebugEnabled: %v", logger.IsDebugEnabled())
+
+	// Initialize and start eBPF programs
+	if err := ebpf.Initialize(); err != nil {
+		logger.Fatalf("failed to initialize eBPF: %v", err)
+	}
+	
+	if err := ebpf.Start(); err != nil {
+		logger.Fatalf("failed to start eBPF: %v", err)
 	}
 
 	// Setup signal handling for graceful shutdown
@@ -36,8 +45,12 @@ func main() {
 
 	go func() {
 		<-c
-		logger.Info("Shutting down...")
-		bpf.Cleanup()
+		logger.Info("Shutdown signal received...")
+		logger.Debug("Starting cleanup process...")
+		if err := ebpf.Stop(); err != nil {
+			logger.Errorf("Error stopping eBPF system: %v", err)
+		}
+		logger.Debug("eBPF cleanup complete, canceling context...")
 		cancel()
 	}()
 
@@ -109,12 +122,15 @@ func main() {
 	}()
 
 	// Wait for context cancellation (shutdown signal)
+	logger.Debug("Waiting for shutdown signal...")
 	<-ctx.Done()
+	logger.Debug("Context canceled, starting graceful shutdown...")
 
 	// Graceful shutdown of HTTP server
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
+	logger.Debug("Shutting down HTTP server...")
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Fatalf("HTTP server shutdown error: %v", err)
 	}
