@@ -18,12 +18,12 @@ type MockEvent struct {
 	metadata  map[string]interface{}
 }
 
-func (m *MockEvent) ID() string                        { return m.id }
-func (m *MockEvent) Type() string                      { return m.eventType }
-func (m *MockEvent) PID() uint32                       { return m.pid }
-func (m *MockEvent) Command() string                   { return m.command }
-func (m *MockEvent) Timestamp() uint64                 { return m.timestamp }
-func (m *MockEvent) Time() time.Time                   { return m.time }
+func (m *MockEvent) ID() string                       { return m.id }
+func (m *MockEvent) Type() string                     { return m.eventType }
+func (m *MockEvent) PID() uint32                      { return m.pid }
+func (m *MockEvent) Command() string                  { return m.command }
+func (m *MockEvent) Timestamp() uint64                { return m.timestamp }
+func (m *MockEvent) Time() time.Time                  { return m.time }
 func (m *MockEvent) Metadata() map[string]interface{} { return m.metadata }
 
 func (m *MockEvent) MarshalJSON() ([]byte, error) {
@@ -103,15 +103,15 @@ type MockProgram struct {
 	stream      EventStream
 }
 
-func (m *MockProgram) Name() string                              { return m.name }
-func (m *MockProgram) Description() string                      { return m.description }
-func (m *MockProgram) Load(ctx context.Context) error           { m.loaded = true; return nil }
-func (m *MockProgram) Attach(ctx context.Context) error         { m.attached = true; return nil }
-func (m *MockProgram) Detach(ctx context.Context) error         { m.attached = false; return nil }
-func (m *MockProgram) IsLoaded() bool                           { return m.loaded }
-func (m *MockProgram) IsAttached() bool                         { return m.attached }
-func (m *MockProgram) EventStream() EventStream                 { return m.stream }
-func (m *MockProgram) GetStats() (uint64, uint64, float64)      { return 0, 0, 0.0 }
+func (m *MockProgram) Name() string                        { return m.name }
+func (m *MockProgram) Description() string                 { return m.description }
+func (m *MockProgram) Load(ctx context.Context) error      { m.loaded = true; return nil }
+func (m *MockProgram) Attach(ctx context.Context) error    { m.attached = true; return nil }
+func (m *MockProgram) Detach(ctx context.Context) error    { m.attached = false; return nil }
+func (m *MockProgram) IsLoaded() bool                      { return m.loaded }
+func (m *MockProgram) IsAttached() bool                    { return m.attached }
+func (m *MockProgram) EventStream() EventStream            { return m.stream }
+func (m *MockProgram) GetStats() (uint64, uint64, float64) { return 0, 0, 0.0 }
 
 // MockManager implements Manager for testing
 type MockManager struct {
@@ -119,20 +119,23 @@ type MockManager struct {
 	running  bool
 }
 
-func (m *MockManager) RegisterProgram(program Program) error     { m.programs = append(m.programs, program); return nil }
-func (m *MockManager) LoadAll(ctx context.Context) error        { m.running = true; return nil }
-func (m *MockManager) AttachAll(ctx context.Context) error      { return nil }
-func (m *MockManager) DetachAll(ctx context.Context) error      { return nil }
-func (m *MockManager) Programs() []Program                      { return m.programs }
-func (m *MockManager) GetProgramStatus() []ProgramStatus        { return []ProgramStatus{} }
-func (m *MockManager) EventStream() EventStream                 { return &MockEventStream{events: make(chan Event)} }
-func (m *MockManager) IsRunning() bool                          { return m.running }
+func (m *MockManager) RegisterProgram(program Program) error {
+	m.programs = append(m.programs, program)
+	return nil
+}
+func (m *MockManager) LoadAll(ctx context.Context) error   { m.running = true; return nil }
+func (m *MockManager) AttachAll(ctx context.Context) error { return nil }
+func (m *MockManager) DetachAll(ctx context.Context) error { return nil }
+func (m *MockManager) Programs() []Program                 { return m.programs }
+func (m *MockManager) GetProgramStatus() []ProgramStatus   { return []ProgramStatus{} }
+func (m *MockManager) EventStream() EventStream            { return &MockEventStream{events: make(chan Event)} }
+func (m *MockManager) IsRunning() bool                     { return m.running }
 
 // TestEvent tests the Event interface
 func TestEvent(t *testing.T) {
 	now := time.Now()
 	timestamp := uint64(now.UnixNano())
-	
+
 	event := &MockEvent{
 		id:        "test-123",
 		eventType: "connection",

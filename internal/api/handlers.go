@@ -112,39 +112,39 @@ func HandleEvents(w http.ResponseWriter, r *http.Request) {
 
 	// Parse query parameters
 	query := core.Query{}
-	
+
 	if eventType := r.URL.Query().Get("type"); eventType != "" {
 		query.EventType = eventType
 	}
-	
+
 	if pidStr := r.URL.Query().Get("pid"); pidStr != "" {
 		if pid, err := strconv.ParseUint(pidStr, 10, 32); err == nil {
 			query.PID = uint32(pid)
 		}
 	}
-	
+
 	if command := r.URL.Query().Get("command"); command != "" {
 		query.Command = command
 	}
-	
+
 	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
 		if since, err := time.Parse(time.RFC3339, sinceStr); err == nil {
 			query.Since = since
 		}
 	}
-	
+
 	if untilStr := r.URL.Query().Get("until"); untilStr != "" {
 		if until, err := time.Parse(time.RFC3339, untilStr); err == nil {
 			query.Until = until
 		}
 	}
-	
+
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
 			query.Limit = limit
 		}
 	}
-	
+
 	// Default limit to prevent overwhelming responses
 	if query.Limit == 0 {
 		query.Limit = 100
@@ -356,7 +356,7 @@ func HandlePacketDropSummary(w http.ResponseWriter, r *http.Request) {
 //	@Router			/api/list-connections [get]
 func HandleListConnections(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf("🌐 HTTP REQUEST: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-	
+
 	if globalSystem == nil {
 		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
 		return
@@ -412,7 +412,7 @@ func HandleListConnections(w http.ResponseWriter, r *http.Request) {
 //	@Router			/api/list-packet-drops [get]
 func HandleListPacketDrops(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf("🌐 HTTP REQUEST: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-	
+
 	if globalSystem == nil {
 		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
 		return
@@ -459,48 +459,48 @@ func HandleListPacketDrops(w http.ResponseWriter, r *http.Request) {
 
 // ConnectionSummaryRequest represents the request body for connection summary
 type ConnectionSummaryRequest struct {
-	PID      uint32 `json:"pid" example:"1234"`                          // Process ID
-	Command  string `json:"command" example:"curl"`                      // Command name
-	Duration int    `json:"duration_seconds" example:"60"`               // Duration in seconds
+	PID      uint32 `json:"pid" example:"1234"`            // Process ID
+	Command  string `json:"command" example:"curl"`        // Command name
+	Duration int    `json:"duration_seconds" example:"60"` // Duration in seconds
 }
 
 // ConnectionSummaryResponse represents the response for connection summary
 type ConnectionSummaryResponse struct {
-	Count           int    `json:"count" example:"5"`                      // Number of connection events
-	PID             uint32 `json:"pid" example:"1234"`                     // Process ID
-	Command         string `json:"command" example:"curl"`                 // Command name
-	DurationSeconds int    `json:"duration_seconds" example:"60"`          // Duration in seconds
+	Count           int    `json:"count" example:"5"`                         // Number of connection events
+	PID             uint32 `json:"pid" example:"1234"`                        // Process ID
+	Command         string `json:"command" example:"curl"`                    // Command name
+	DurationSeconds int    `json:"duration_seconds" example:"60"`             // Duration in seconds
 	QueryTime       string `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }
 
 // PacketDropSummaryRequest represents the request body for packet drop summary
 type PacketDropSummaryRequest struct {
-	PID      uint32 `json:"pid" example:"1234"`                          // Process ID
-	Command  string `json:"command" example:"nginx"`                     // Command name
-	Duration int    `json:"duration_seconds" example:"60"`               // Duration in seconds
+	PID      uint32 `json:"pid" example:"1234"`            // Process ID
+	Command  string `json:"command" example:"nginx"`       // Command name
+	Duration int    `json:"duration_seconds" example:"60"` // Duration in seconds
 }
 
 // PacketDropSummaryResponse represents the response for packet drop summary
 type PacketDropSummaryResponse struct {
-	Count           int    `json:"count" example:"3"`                      // Number of packet drop events
-	PID             uint32 `json:"pid" example:"1234"`                     // Process ID
-	Command         string `json:"command" example:"nginx"`                // Command name
-	DurationSeconds int    `json:"duration_seconds" example:"60"`          // Duration in seconds
+	Count           int    `json:"count" example:"3"`                         // Number of packet drop events
+	PID             uint32 `json:"pid" example:"1234"`                        // Process ID
+	Command         string `json:"command" example:"nginx"`                   // Command name
+	DurationSeconds int    `json:"duration_seconds" example:"60"`             // Duration in seconds
 	QueryTime       string `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }
 
 // ConnectionListResponse represents the response for listing connections
 type ConnectionListResponse struct {
-	TotalPIDs    int                            `json:"total_pids" example:"3"`                     // Number of unique PIDs
-	TotalEvents  int                            `json:"total_events" example:"10"`                  // Total number of events
-	EventsByPID  map[uint32][]core.Event        `json:"events_by_pid"`                              // Events grouped by PID
-	QueryTime    string                         `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	TotalPIDs   int                     `json:"total_pids" example:"3"`                    // Number of unique PIDs
+	TotalEvents int                     `json:"total_events" example:"10"`                 // Total number of events
+	EventsByPID map[uint32][]core.Event `json:"events_by_pid"`                             // Events grouped by PID
+	QueryTime   string                  `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }
 
 // PacketDropListResponse represents the response for listing packet drops
 type PacketDropListResponse struct {
-	TotalPIDs    int                            `json:"total_pids" example:"2"`                     // Number of unique PIDs
-	TotalEvents  int                            `json:"total_events" example:"7"`                   // Total number of events
-	EventsByPID  map[uint32][]core.Event        `json:"events_by_pid"`                              // Events grouped by PID
-	QueryTime    string                         `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	TotalPIDs   int                     `json:"total_pids" example:"2"`                    // Number of unique PIDs
+	TotalEvents int                     `json:"total_events" example:"7"`                  // Total number of events
+	EventsByPID map[uint32][]core.Event `json:"events_by_pid"`                             // Events grouped by PID
+	QueryTime   string                  `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }

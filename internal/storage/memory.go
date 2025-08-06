@@ -29,13 +29,13 @@ func NewMemoryStorage() *MemoryStorage {
 func (s *MemoryStorage) Store(ctx context.Context, event core.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.events = append(s.events, event)
-	
+
 	// Debug log stored events
-	logger.Debugf("💾 STORED EVENT: type=%s PID=%d cmd=%s total_events=%d", 
+	logger.Debugf("💾 STORED EVENT: type=%s PID=%d cmd=%s total_events=%d",
 		event.Type(), event.PID(), event.Command(), len(s.events))
-	
+
 	return nil
 }
 
@@ -43,25 +43,25 @@ func (s *MemoryStorage) Store(ctx context.Context, event core.Event) error {
 func (s *MemoryStorage) Query(ctx context.Context, query core.Query) ([]core.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	var results []core.Event
-	
+
 	for _, event := range s.events {
 		if s.matchesQuery(event, query) {
 			results = append(results, event)
 		}
 	}
-	
+
 	// Sort by timestamp (most recent first)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Timestamp() > results[j].Timestamp()
 	})
-	
+
 	// Apply limit
 	if query.Limit > 0 && len(results) > query.Limit {
 		results = results[:query.Limit]
 	}
-	
+
 	return results, nil
 }
 
@@ -69,14 +69,14 @@ func (s *MemoryStorage) Query(ctx context.Context, query core.Query) ([]core.Eve
 func (s *MemoryStorage) Count(ctx context.Context, query core.Query) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	count := 0
 	for _, event := range s.events {
 		if s.matchesQuery(event, query) {
 			count++
 		}
 	}
-	
+
 	return count, nil
 }
 
@@ -86,17 +86,17 @@ func (s *MemoryStorage) matchesQuery(event core.Event, query core.Query) bool {
 	if query.EventType != "" && event.Type() != query.EventType {
 		return false
 	}
-	
+
 	// Filter by PID
 	if query.PID != 0 && event.PID() != query.PID {
 		return false
 	}
-	
+
 	// Filter by command
 	if query.Command != "" && event.Command() != query.Command {
 		return false
 	}
-	
+
 	// Filter by time range
 	eventTime := event.Time()
 	if !query.Since.IsZero() && eventTime.Before(query.Since) {
@@ -105,7 +105,7 @@ func (s *MemoryStorage) matchesQuery(event core.Event, query core.Query) bool {
 	if !query.Until.IsZero() && eventTime.After(query.Until) {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -113,16 +113,16 @@ func (s *MemoryStorage) matchesQuery(event core.Event, query core.Query) bool {
 func (s *MemoryStorage) Cleanup(maxAge time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	cutoff := time.Now().Add(-maxAge)
 	var kept []core.Event
-	
+
 	for _, event := range s.events {
 		if event.Time().After(cutoff) {
 			kept = append(kept, event)
 		}
 	}
-	
+
 	s.events = kept
 }
 
@@ -137,17 +137,17 @@ type StorageWithSink struct {
 // NewStorageWithSink creates storage that automatically consumes from an event stream.
 func NewStorageWithSink(storage core.EventSink, stream core.EventStream) *StorageWithSink {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	s := &StorageWithSink{
 		storage: storage,
 		stream:  stream,
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-	
+
 	// Start consuming events
 	go s.consumeEvents()
-	
+
 	return s
 }
 
@@ -180,13 +180,13 @@ func (s *StorageWithSink) consumeEvents() {
 			if !ok {
 				return
 			}
-			
+
 			if err := s.storage.Store(s.ctx, event); err != nil {
 				// Log the storage error - this could indicate memory pressure,
 				// disk space issues, or other critical storage problems
-				logger.Errorf("Failed to store event (PID: %d, Type: %s): %v", 
+				logger.Errorf("Failed to store event (PID: %d, Type: %s): %v",
 					event.PID(), event.Type(), err)
-				
+
 				// For critical storage failures, we continue processing to avoid
 				// blocking the event stream, but log the error for monitoring
 				// In production, consider implementing:
@@ -194,7 +194,7 @@ func (s *StorageWithSink) consumeEvents() {
 				// - Circuit breaker for persistent failures
 				// - Backup storage mechanisms
 			}
-			
+
 		case <-s.ctx.Done():
 			return
 		}
