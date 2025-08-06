@@ -41,6 +41,7 @@ type BaseProgram struct {
 	droppedEvents uint64
 	totalEvents   uint64
 	lastAlertTime time.Time
+	logCounter    uint64 // Counter for efficient logging every N events
 }
 
 // NewBaseProgram creates a new base program.
@@ -236,11 +237,16 @@ func (p *BaseProgram) StartRingBufferReader(mapName string, parser core.EventPar
 			// Track total events
 			p.mu.Lock()
 			p.totalEvents++
+			p.logCounter++
 			currentTotal := p.totalEvents
+			shouldLog := p.logCounter >= 100 // Log every 100th event to avoid spam
+			if shouldLog {
+				p.logCounter = 0 // Reset counter
+			}
 			p.mu.Unlock()
 
 			// Log ring buffer activity (only for debugging)
-			if currentTotal%100 == 0 { // Log every 100th event to avoid spam
+			if shouldLog {
 				logger.Debugf("📡 RING BUFFER: %s processed %d events", p.name, currentTotal)
 			}
 
