@@ -45,19 +45,11 @@ func (s *MemoryStorage) Query(ctx context.Context, query core.Query) ([]core.Eve
 	defer s.mu.RUnlock()
 
 	var results []core.Event
-	totalChecked := 0
 
 	for _, event := range s.events {
-		totalChecked++
 		if s.matchesQuery(event, query) {
 			results = append(results, event)
 		}
-	}
-
-	// Log only if we're filtering by time and getting unexpected results
-	if !query.Since.IsZero() && len(results) == 0 && totalChecked > 0 {
-		logger.Debugf("🔍 STORAGE QUERY: type=%s since=%s checked=%d matched=%d",
-			query.EventType, query.Since.Format(time.RFC3339), totalChecked, len(results))
 	}
 
 	// Sort by timestamp (most recent first)
