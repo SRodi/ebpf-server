@@ -17,11 +17,11 @@ const (
 	ProgramName        = "packet_drop"
 	ProgramDescription = "Monitors packet drops via kfree_skb tracepoint"
 	ObjectPath         = "bpf/packet_drop.o"
-	
+
 	// eBPF program and map names
 	TracepointProgram = "trace_kfree_skb"
 	EventsMapName     = "drop_events"
-	
+
 	// Tracepoint configuration
 	TracepointGroup = "skb"
 	TracepointName  = "kfree_skb"
@@ -45,20 +45,20 @@ func (p *Program) Attach(ctx context.Context) error {
 	if !p.IsLoaded() {
 		return fmt.Errorf("program not loaded")
 	}
-	
+
 	logger.Debugf("Attaching packet drop monitoring program")
-	
+
 	// Attach to kfree_skb tracepoint
 	if err := p.AttachToTracepoint(TracepointProgram, TracepointGroup, TracepointName); err != nil {
 		return fmt.Errorf("failed to attach to tracepoint: %w", err)
 	}
-	
+
 	// Start ring buffer reader
 	parser := NewEventParser()
 	if err := p.StartRingBufferReader(EventsMapName, parser); err != nil {
 		return fmt.Errorf("failed to start ring buffer reader: %w", err)
 	}
-	
+
 	logger.Info("Packet drop monitoring program attached and active")
 	return nil
 }
@@ -81,40 +81,40 @@ func (p *EventParser) Parse(data []byte) (core.Event, error) {
 	if len(data) != 44 {
 		return nil, fmt.Errorf("invalid packet drop event size: expected 44 bytes, got %d", len(data))
 	}
-	
+
 	// Parse binary data based on C struct layout:
 	// struct drop_event_t {
 	//     u32 pid;          // 0-3
-	//     u64 ts;           // 4-11  
+	//     u64 ts;           // 4-11
 	//     char comm[16];    // 12-27
 	//     u32 drop_reason;  // 28-31
 	//     u32 skb_len;      // 32-35
 	//     u8 padding[8];    // 36-43
 	// }
-	
+
 	pid := binary.LittleEndian.Uint32(data[0:4])
 	timestamp := binary.LittleEndian.Uint64(data[4:12])
-	
+
 	// Extract command (null-terminated string)
 	command := extractNullTerminatedString(data[12:28])
-	
+
 	dropReason := binary.LittleEndian.Uint32(data[28:32])
 	skbLen := binary.LittleEndian.Uint32(data[32:36])
-	
+
 	// Build metadata with parsed fields and derived information
 	metadata := map[string]interface{}{
-		"drop_reason_code":   dropReason,
-		"drop_reason":        formatDropReason(dropReason),
-		"skb_length":         skbLen,
-		"packet_size_bytes":  skbLen,
+		"drop_reason_code":  dropReason,
+		"drop_reason":       formatDropReason(dropReason),
+		"skb_length":        skbLen,
+		"packet_size_bytes": skbLen,
 	}
-	
+
 	event := events.NewBaseEvent("packet_drop", pid, command, timestamp, metadata)
-	
+
 	// Debug log the parsed packet drop event
-	logger.Debugf("📦 PACKET DROP EVENT: PID=%d cmd=%s reason=%s (%d) size=%d bytes", 
+	logger.Debugf("📦 PACKET DROP EVENT: PID=%d cmd=%s reason=%s (%d) size=%d bytes",
 		pid, command, formatDropReason(dropReason), dropReason, skbLen)
-	
+
 	return event, nil
 }
 

@@ -30,11 +30,11 @@ var (
 func calculateSystemBootTime() time.Time {
 	bootTimeMutex.Lock()
 	defer bootTimeMutex.Unlock()
-	
+
 	if bootTimeCalculated {
 		return systemBootTime
 	}
-	
+
 	// Try Linux-specific method first
 	if bootTime, err := getBootTimeLinux(); err == nil {
 		systemBootTime = bootTime
@@ -42,7 +42,7 @@ func calculateSystemBootTime() time.Time {
 		logger.Debugf("System boot time calculated (Linux): %v", systemBootTime)
 		return systemBootTime
 	}
-	
+
 	// Fallback for non-Linux systems or when /proc/stat is unavailable
 	// This provides a reasonable approximation for development/testing
 	systemBootTime = time.Now().Add(-time.Hour * 24) // Assume system has been up for less than 24 hours
@@ -57,7 +57,7 @@ func getBootTimeLinux() (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	
+
 	// Parse /proc/stat to find the btime line
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
@@ -72,7 +72,7 @@ func getBootTimeLinux() (time.Time, error) {
 			}
 		}
 	}
-	
+
 	return time.Time{}, fmt.Errorf("btime not found in /proc/stat")
 }
 
@@ -81,7 +81,7 @@ func getBootTimeLinux() (time.Time, error) {
 // since system boot. To convert to wall-clock time, we add this to the system boot time.
 func convertEBPFTimestamp(ebpfTimestampNs uint64) time.Time {
 	bootTime := calculateSystemBootTime()
-	
+
 	// Add the eBPF timestamp (nanoseconds since boot) to the boot time
 	return bootTime.Add(time.Duration(ebpfTimestampNs) * time.Nanosecond)
 }
@@ -293,14 +293,14 @@ func (m *MergedStream) Close() error {
 	// Wait for all goroutines to finish before closing the events channel
 	m.wg.Wait()
 	close(m.events)
-	
+
 	return nil
 }
 
 // readFromStream reads events from a source stream and forwards them.
 func (m *MergedStream) readFromStream(stream core.EventStream) {
 	defer m.wg.Done()
-	
+
 	for {
 		select {
 		case event, ok := <-stream.Events():

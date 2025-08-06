@@ -54,7 +54,7 @@ func TestParseValidPacketDropEvent(t *testing.T) {
 	// Set test values based on C struct layout:
 	// struct drop_event_t {
 	//     u32 pid;          // 0-3
-	//     u64 ts;           // 4-11  
+	//     u64 ts;           // 4-11
 	//     char comm[16];    // 12-27
 	//     u32 drop_reason;  // 28-31
 	//     u32 skb_len;      // 32-35
@@ -63,16 +63,16 @@ func TestParseValidPacketDropEvent(t *testing.T) {
 
 	// pid (offset 0, 4 bytes)
 	binary.LittleEndian.PutUint32(testData[0:4], 5678)
-	
-	// timestamp (offset 4, 8 bytes)  
+
+	// timestamp (offset 4, 8 bytes)
 	binary.LittleEndian.PutUint64(testData[4:12], 2000000)
-	
+
 	// command (offset 12, 16 bytes)
 	copy(testData[12:28], []byte("iptables\x00"))
-	
+
 	// drop_reason (offset 28, 4 bytes)
 	binary.LittleEndian.PutUint32(testData[28:32], 2) // TCP_DROP
-	
+
 	// skb_len (offset 32, 4 bytes)
 	binary.LittleEndian.PutUint32(testData[32:36], 1500)
 
@@ -101,7 +101,7 @@ func TestParseValidPacketDropEvent(t *testing.T) {
 
 	// Check metadata
 	metadata := event.Metadata()
-	
+
 	if metadata["drop_reason_code"] != uint32(2) {
 		t.Errorf("expected drop_reason_code 2, got %v", metadata["drop_reason_code"])
 	}
@@ -139,13 +139,13 @@ func TestParsePacketDropWithDifferentReasons(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			testData := make([]byte, 44)
-			
+
 			// Set basic fields
-			binary.LittleEndian.PutUint32(testData[0:4], 1234)    // pid
-			binary.LittleEndian.PutUint64(testData[4:12], 1000000) // timestamp
-			copy(testData[12:28], []byte("test\x00"))              // command
+			binary.LittleEndian.PutUint32(testData[0:4], 1234)            // pid
+			binary.LittleEndian.PutUint64(testData[4:12], 1000000)        // timestamp
+			copy(testData[12:28], []byte("test\x00"))                     // command
 			binary.LittleEndian.PutUint32(testData[28:32], tc.reasonCode) // drop_reason
-			binary.LittleEndian.PutUint32(testData[32:36], 500)   // skb_len
+			binary.LittleEndian.PutUint32(testData[32:36], 500)           // skb_len
 
 			event, err := parser.Parse(testData)
 			if err != nil {
@@ -182,12 +182,12 @@ func TestParsePacketDropWithDifferentSizes(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			testData := make([]byte, 44)
-			
+
 			// Set basic fields
-			binary.LittleEndian.PutUint32(testData[0:4], 1234)    // pid
-			binary.LittleEndian.PutUint64(testData[4:12], 1000000) // timestamp
-			copy(testData[12:28], []byte("test\x00"))              // command
-			binary.LittleEndian.PutUint32(testData[28:32], 1)     // drop_reason (SKB_FREE)
+			binary.LittleEndian.PutUint32(testData[0:4], 1234)      // pid
+			binary.LittleEndian.PutUint64(testData[4:12], 1000000)  // timestamp
+			copy(testData[12:28], []byte("test\x00"))               // command
+			binary.LittleEndian.PutUint32(testData[28:32], 1)       // drop_reason (SKB_FREE)
 			binary.LittleEndian.PutUint32(testData[32:36], tc.size) // skb_len
 
 			event, err := parser.Parse(testData)
@@ -346,7 +346,7 @@ func TestPacketDropEventCompleteScenarios(t *testing.T) {
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			testData := make([]byte, 44)
-			
+
 			binary.LittleEndian.PutUint32(testData[0:4], scenario.pid)
 			binary.LittleEndian.PutUint64(testData[4:12], 3000000)
 			copy(testData[12:28], []byte(scenario.command+"\x00"))

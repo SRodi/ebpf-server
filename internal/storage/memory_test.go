@@ -184,7 +184,7 @@ func TestMemoryStorageQueryByTimeRange(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
-	
+
 	// Store events with different times
 	times := []time.Time{
 		now.Add(-2 * time.Hour),

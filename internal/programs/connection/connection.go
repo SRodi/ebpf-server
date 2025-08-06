@@ -18,11 +18,11 @@ const (
 	ProgramName        = "connection"
 	ProgramDescription = "Monitors network connection attempts via sys_enter_connect tracepoint"
 	ObjectPath         = "bpf/connection.o"
-	
+
 	// eBPF program and map names
 	TracepointProgram = "trace_connect"
 	EventsMapName     = "events"
-	
+
 	// Tracepoint configuration
 	TracepointGroup = "syscalls"
 	TracepointName  = "sys_enter_connect"
@@ -46,20 +46,20 @@ func (p *Program) Attach(ctx context.Context) error {
 	if !p.IsLoaded() {
 		return fmt.Errorf("program not loaded")
 	}
-	
+
 	logger.Debugf("Attaching connection monitoring program")
-	
+
 	// Attach to sys_enter_connect tracepoint
 	if err := p.AttachToTracepoint(TracepointProgram, TracepointGroup, TracepointName); err != nil {
 		return fmt.Errorf("failed to attach to tracepoint: %w", err)
 	}
-	
+
 	// Start ring buffer reader
 	parser := NewEventParser()
 	if err := p.StartRingBufferReader(EventsMapName, parser); err != nil {
 		return fmt.Errorf("failed to start ring buffer reader: %w", err)
 	}
-	
+
 	logger.Info("Connection monitoring program attached and active")
 	return nil
 }
@@ -82,7 +82,7 @@ func (p *EventParser) Parse(data []byte) (core.Event, error) {
 	if len(data) != 60 {
 		return nil, fmt.Errorf("invalid connection event size: expected 60 bytes, got %d", len(data))
 	}
-	
+
 	// Parse binary data based on C struct layout:
 	// struct event_t {
 	//     u32 pid;         // 0-3
@@ -97,23 +97,23 @@ func (p *EventParser) Parse(data []byte) (core.Event, error) {
 	//     u8 sock_type;    // 57
 	//     u16 padding;     // 58-59
 	// }
-	
+
 	pid := binary.LittleEndian.Uint32(data[0:4])
 	timestamp := binary.LittleEndian.Uint64(data[4:12])
 	ret := int32(binary.LittleEndian.Uint32(data[12:16]))
-	
+
 	// Extract command (null-terminated string)
 	command := extractNullTerminatedString(data[16:32])
-	
+
 	destIPv4 := binary.LittleEndian.Uint32(data[32:36])
 	var destIPv6 [16]byte
 	copy(destIPv6[:], data[36:52])
-	
+
 	destPort := binary.LittleEndian.Uint16(data[52:54])
 	family := binary.LittleEndian.Uint16(data[54:56])
 	protocol := data[56]
 	sockType := data[57]
-	
+
 	// Build metadata with parsed fields and derived information
 	metadata := map[string]interface{}{
 		"return_code":      ret,
@@ -123,26 +123,26 @@ func (p *EventParser) Parse(data []byte) (core.Event, error) {
 		"address_family":   family,
 		"protocol":         formatProtocol(protocol),
 		"socket_type":      formatSocketType(sockType),
-		
+
 		// Raw values for further processing if needed
-		"raw_ipv4":      destIPv4,
-		"raw_ipv6":      destIPv6,
-		"raw_protocol":  protocol,
-		"raw_socktype":  sockType,
+		"raw_ipv4":     destIPv4,
+		"raw_ipv6":     destIPv6,
+		"raw_protocol": protocol,
+		"raw_socktype": sockType,
 	}
-	
+
 	event := events.NewBaseEvent("connection", pid, command, timestamp, metadata)
-	
+
 	// Debug log the parsed connection event
 	destination := formatDestination(family, destIPv4, destIPv6, destPort)
 	if destination != "" {
-		logger.Debugf("🔗 CONNECTION EVENT: PID=%d cmd=%s dest=%s proto=%s ret=%d", 
+		logger.Debugf("🔗 CONNECTION EVENT: PID=%d cmd=%s dest=%s proto=%s ret=%d",
 			pid, command, destination, formatProtocol(protocol), ret)
 	} else {
-		logger.Debugf("🔗 CONNECTION EVENT: PID=%d cmd=%s family=%d (local socket) ret=%d", 
+		logger.Debugf("🔗 CONNECTION EVENT: PID=%d cmd=%s family=%d (local socket) ret=%d",
 			pid, command, family, ret)
 	}
-	
+
 	return event, nil
 }
 
@@ -162,7 +162,7 @@ func formatIP(family uint16, ipv4 uint32, ipv6 [16]byte) string {
 		AF_INET  = 2
 		AF_INET6 = 10
 	)
-	
+
 	switch family {
 	case AF_INET:
 		if ipv4 == 0 {
@@ -171,7 +171,7 @@ func formatIP(family uint16, ipv4 uint32, ipv6 [16]byte) string {
 		// Convert from little-endian uint32 to IP address
 		ip := net.IPv4(byte(ipv4), byte(ipv4>>8), byte(ipv4>>16), byte(ipv4>>24))
 		return ip.String()
-		
+
 	case AF_INET6:
 		// Check if IPv6 address is all zeros
 		allZero := true
@@ -186,7 +186,7 @@ func formatIP(family uint16, ipv4 uint32, ipv6 [16]byte) string {
 		}
 		ip := net.IP(ipv6[:])
 		return ip.String()
-		
+
 	default:
 		return ""
 	}
@@ -195,17 +195,17 @@ func formatIP(family uint16, ipv4 uint32, ipv6 [16]byte) string {
 // formatDestination formats the destination as "IP:port".
 func formatDestination(family uint16, ipv4 uint32, ipv6 [16]byte, port uint16) string {
 	const AF_INET6 = 10
-	
+
 	ip := formatIP(family, ipv4, ipv6)
 	if ip == "" {
 		return ""
 	}
-	
+
 	// IPv6 addresses need to be wrapped in brackets
 	if family == AF_INET6 {
 		return fmt.Sprintf("[%s]:%d", ip, port)
 	}
-	
+
 	return fmt.Sprintf("%s:%d", ip, port)
 }
 

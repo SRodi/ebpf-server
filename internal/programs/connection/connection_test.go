@@ -54,7 +54,7 @@ func TestParseValidConnectionEvent(t *testing.T) {
 	// Set test values based on C struct layout:
 	// struct event_t {
 	//     u32 pid;         // 0-3
-	//     u64 ts;          // 4-11  
+	//     u64 ts;          // 4-11
 	//     u32 ret;         // 12-15
 	//     char comm[16];   // 16-31
 	//     u32 dest_ip;     // 32-35
@@ -68,31 +68,31 @@ func TestParseValidConnectionEvent(t *testing.T) {
 
 	// pid (offset 0, 4 bytes)
 	binary.LittleEndian.PutUint32(testData[0:4], 1234)
-	
-	// timestamp (offset 4, 8 bytes)  
+
+	// timestamp (offset 4, 8 bytes)
 	binary.LittleEndian.PutUint64(testData[4:12], 1000000)
-	
+
 	// ret (offset 12, 4 bytes)
 	binary.LittleEndian.PutUint32(testData[12:16], 0) // Success
-	
+
 	// command (offset 16, 16 bytes)
 	copy(testData[16:32], []byte("curl\x00"))
-	
+
 	// dest_ip (offset 32, 4 bytes) - 127.0.0.1
 	// Need to store as little-endian but the IP extraction expects different byte order
 	binary.LittleEndian.PutUint32(testData[32:36], 0x0100007f)
-	
+
 	// dest_ip6 (offset 36, 16 bytes) - leave as zeros for IPv4
-	
+
 	// dest_port (offset 52, 2 bytes)
 	binary.LittleEndian.PutUint16(testData[52:54], 80)
-	
+
 	// family (offset 54, 2 bytes) - AF_INET = 2
 	binary.LittleEndian.PutUint16(testData[54:56], 2)
-	
+
 	// protocol (offset 56, 1 byte) - TCP = 6
 	testData[56] = 6
-	
+
 	// sock_type (offset 57, 1 byte) - STREAM = 1
 	testData[57] = 1
 
@@ -121,7 +121,7 @@ func TestParseValidConnectionEvent(t *testing.T) {
 
 	// Check metadata
 	metadata := event.Metadata()
-	
+
 	if metadata["protocol"] != "TCP" {
 		t.Errorf("expected protocol 'TCP', got %v", metadata["protocol"])
 	}
@@ -157,7 +157,7 @@ func TestParseIPv6ConnectionEvent(t *testing.T) {
 	testData := make([]byte, 60)
 
 	// Set basic fields
-	binary.LittleEndian.PutUint32(testData[0:4], 5678)    // pid
+	binary.LittleEndian.PutUint32(testData[0:4], 5678)     // pid
 	binary.LittleEndian.PutUint64(testData[4:12], 2000000) // timestamp
 	binary.LittleEndian.PutUint32(testData[12:16], 0)      // ret
 	copy(testData[16:32], []byte("wget\x00"))              // command
@@ -169,10 +169,10 @@ func TestParseIPv6ConnectionEvent(t *testing.T) {
 	ipv6 := [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
 	copy(testData[36:52], ipv6[:])
 
-	binary.LittleEndian.PutUint16(testData[52:54], 443)  // dest_port (HTTPS)
-	binary.LittleEndian.PutUint16(testData[54:56], 10)   // family (AF_INET6 = 10)
-	testData[56] = 6  // protocol (TCP)
-	testData[57] = 1  // sock_type (STREAM)
+	binary.LittleEndian.PutUint16(testData[52:54], 443) // dest_port (HTTPS)
+	binary.LittleEndian.PutUint16(testData[54:56], 10)  // family (AF_INET6 = 10)
+	testData[56] = 6                                    // protocol (TCP)
+	testData[57] = 1                                    // sock_type (STREAM)
 
 	event, err := parser.Parse(testData)
 	if err != nil {
@@ -180,7 +180,7 @@ func TestParseIPv6ConnectionEvent(t *testing.T) {
 	}
 
 	metadata := event.Metadata()
-	
+
 	if metadata["destination_ip"] != "::1" {
 		t.Errorf("expected destination_ip '::1', got %v", metadata["destination_ip"])
 	}
@@ -200,16 +200,16 @@ func TestParseLocalSocketEvent(t *testing.T) {
 	testData := make([]byte, 60)
 
 	// Set basic fields
-	binary.LittleEndian.PutUint32(testData[0:4], 9999)      // pid
-	binary.LittleEndian.PutUint64(testData[4:12], 3000000)   // timestamp
+	binary.LittleEndian.PutUint32(testData[0:4], 9999)         // pid
+	binary.LittleEndian.PutUint64(testData[4:12], 3000000)     // timestamp
 	binary.LittleEndian.PutUint32(testData[12:16], 0xFFFFFFFF) // ret (error -1)
-	copy(testData[16:32], []byte("test\x00"))                // command
+	copy(testData[16:32], []byte("test\x00"))                  // command
 
 	// No IP addresses (all zeros)
 	// family = 1 (AF_UNIX), no destination info
-	binary.LittleEndian.PutUint16(testData[54:56], 1)   // family (AF_UNIX)
-	testData[56] = 0  // protocol
-	testData[57] = 1  // sock_type (STREAM)
+	binary.LittleEndian.PutUint16(testData[54:56], 1) // family (AF_UNIX)
+	testData[56] = 0                                  // protocol
+	testData[57] = 1                                  // sock_type (STREAM)
 
 	event, err := parser.Parse(testData)
 	if err != nil {
@@ -217,7 +217,7 @@ func TestParseLocalSocketEvent(t *testing.T) {
 	}
 
 	metadata := event.Metadata()
-	
+
 	// For local sockets, IP should be empty
 	if metadata["destination_ip"] != "" {
 		t.Errorf("expected empty destination_ip for local socket, got %v", metadata["destination_ip"])

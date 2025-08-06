@@ -36,7 +36,7 @@ type BaseProgram struct {
 	loaded      bool
 	attached    bool
 	mu          sync.RWMutex
-	
+
 	// Event processing metrics
 	droppedEvents uint64
 	totalEvents   uint64
@@ -68,21 +68,21 @@ func (p *BaseProgram) Description() string {
 func (p *BaseProgram) Load(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if p.loaded {
 		return nil
 	}
-	
+
 	logger.Debugf("Loading eBPF program %s from %s", p.name, p.objectPath)
-	
+
 	collection, err := ebpf.LoadCollection(p.objectPath)
 	if err != nil {
 		return fmt.Errorf("failed to load eBPF collection: %w", err)
 	}
-	
+
 	p.collection = collection
 	p.loaded = true
-	
+
 	logger.Debugf("Successfully loaded eBPF program %s", p.name)
 	return nil
 }
@@ -110,26 +110,26 @@ func (p *BaseProgram) EventStream() core.EventStream {
 func (p *BaseProgram) GetStats() (totalEvents, droppedEvents uint64, dropRate float64) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	totalEvents = p.totalEvents
 	droppedEvents = p.droppedEvents
-	
+
 	if totalEvents > 0 {
 		dropRate = float64(droppedEvents) / float64(totalEvents)
 	}
-	
+
 	return totalEvents, droppedEvents, dropRate
 }
 
 // checkDropRateAndAlert monitors drop rate and triggers alerts when necessary.
 func (p *BaseProgram) checkDropRateAndAlert() {
 	total, dropped, dropRate := p.GetStats()
-	
+
 	// Only check if we have enough events to make a meaningful assessment
 	if total < DropRateWindowSize {
 		return
 	}
-	
+
 	// Check if drop rate exceeds threshold and we haven't alerted recently
 	if dropRate > DropRateAlertThreshold {
 		now := time.Now()
@@ -138,7 +138,7 @@ func (p *BaseProgram) checkDropRateAndAlert() {
 				"This indicates system overload or insufficient buffer capacity. "+
 				"Consider increasing buffer sizes or optimizing event processing.",
 				p.name, dropRate*100, dropped, total)
-			
+
 			p.mu.Lock()
 			p.lastAlertTime = now
 			p.mu.Unlock()
@@ -150,29 +150,29 @@ func (p *BaseProgram) checkDropRateAndAlert() {
 func (p *BaseProgram) Detach(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if !p.attached {
 		return nil
 	}
-	
+
 	// Close all links
 	for _, l := range p.links {
 		if err := l.Close(); err != nil {
 			logger.Errorf("Error closing link for program %s: %v", p.name, err)
 		}
 	}
-	
+
 	p.links = p.links[:0]
 	p.attached = false
-	
+
 	// Close event stream
 	p.eventStream.Close()
-	
+
 	// Reset event statistics
 	p.droppedEvents = 0
 	p.totalEvents = 0
 	p.lastAlertTime = time.Time{}
-	
+
 	logger.Debugf("Detached program %s", p.name)
 	return nil
 }
@@ -198,24 +198,24 @@ func (p *BaseProgram) StartRingBufferReader(mapName string, parser core.EventPar
 	if collection == nil {
 		return fmt.Errorf("program not loaded")
 	}
-	
+
 	ringbufMap := collection.Maps[mapName]
 	if ringbufMap == nil {
 		return fmt.Errorf("ring buffer map %s not found", mapName)
 	}
-	
+
 	logger.Debugf("Starting ring buffer reader for map %s in program %s", mapName, p.name)
-	
+
 	reader, err := ringbuf.NewReader(ringbufMap)
 	if err != nil {
 		return fmt.Errorf("failed to create ring buffer reader: %w", err)
 	}
-	
+
 	// Start reading in a goroutine
 	go func() {
 		defer reader.Close()
 		defer logger.Debugf("Ring buffer reader stopped for %s", p.name)
-		
+
 		for {
 			record, err := reader.Read()
 			if err != nil {
@@ -225,20 +225,25 @@ func (p *BaseProgram) StartRingBufferReader(mapName string, parser core.EventPar
 				logger.Errorf("Error reading from ring buffer in %s: %v", p.name, err)
 				continue
 			}
-			
+
 			// Parse the event
 			event, err := parser.Parse(record.RawSample)
 			if err != nil {
 				logger.Errorf("Error parsing event in %s: %v", p.name, err)
 				continue
 			}
-			
+
 			// Track total events
 			p.mu.Lock()
 			p.totalEvents++
 			currentTotal := p.totalEvents
 			p.mu.Unlock()
-			
+
+			// Log ring buffer activity (only for debugging)
+			if currentTotal%100 == 0 { // Log every 100th event to avoid spam
+				logger.Debugf("📡 RING BUFFER: %s processed %d events", p.name, currentTotal)
+			}
+
 			// Send to event stream with backpressure handling
 			if !p.eventStream.Send(event) {
 				// Event dropped due to full buffer - this is a critical issue
@@ -246,19 +251,19 @@ func (p *BaseProgram) StartRingBufferReader(mapName string, parser core.EventPar
 				p.droppedEvents++
 				droppedCount := p.droppedEvents
 				p.mu.Unlock()
-				
+
 				// Log error (not just debug) since this represents data loss
 				logger.Errorf("Event stream full for %s, DROPPED EVENT (PID: %d, Type: %s). "+
 					"Total dropped: %d/%d events. This indicates backpressure - "+
 					"consider increasing buffer size or optimizing downstream processing.",
 					p.name, event.PID(), event.Type(), droppedCount, currentTotal)
-				
+
 				// Check if we need to trigger high drop rate alerts
 				p.checkDropRateAndAlert()
 			}
 		}
 	}()
-	
+
 	return nil
 }
 
@@ -268,21 +273,21 @@ func (p *BaseProgram) AttachToTracepoint(progName, group, name string) error {
 	if collection == nil {
 		return fmt.Errorf("program not loaded")
 	}
-	
+
 	prog := collection.Programs[progName]
 	if prog == nil {
 		return fmt.Errorf("program %s not found in collection", progName)
 	}
-	
+
 	logger.Debugf("Attaching program %s to tracepoint %s:%s", progName, group, name)
-	
+
 	l, err := link.Tracepoint(group, name, prog, nil)
 	if err != nil {
 		return fmt.Errorf("failed to attach to tracepoint %s:%s: %w", group, name, err)
 	}
-	
+
 	p.AddLink(l)
 	logger.Debugf("Successfully attached program %s to tracepoint %s:%s", progName, group, name)
-	
+
 	return nil
 }

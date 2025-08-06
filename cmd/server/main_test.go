@@ -16,10 +16,10 @@ import (
 func setupTestSystem() *system.System {
 	// Create a test system
 	testSystem := system.NewSystem()
-	
+
 	// Initialize the API with the test system
 	api.Initialize(testSystem)
-	
+
 	return testSystem
 }
 
@@ -78,7 +78,7 @@ func TestHTTPServerSetup(t *testing.T) {
 func TestHTTPHealthEndpoint(t *testing.T) {
 	// Setup test system
 	_ = setupTestSystem()
-	
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", api.HandleHealth)
 
@@ -131,7 +131,7 @@ func TestHTTPAPIEndpoints(t *testing.T) {
 func TestHTTPConnectionSummaryValidation(t *testing.T) {
 	// Setup test system
 	_ = setupTestSystem()
-	
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/connection-summary", api.HandleConnectionSummary)
 

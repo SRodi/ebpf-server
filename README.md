@@ -57,6 +57,65 @@ curl "http://localhost:8080/api/programs"
 - **API Layer**: HTTP endpoints for querying events and program status
 - **System Layer**: Top-level coordination and initialization
 
+## Event Flow Architecture
+
+The system processes events through a real-time streaming pipeline that ensures low latency and high throughput:
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   eBPF Program  │    │   Ring Buffer   │    │  Event Parser   │    │  Event Stream   │
+│                 │    │                 │    │                 │    │                 │
+│ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │
+│ │ sys_connect │ │───▶│ │   events    │ │───▶│ │ Connection  │ │───▶│ │   Channel   │ │
+│ │ tracepoint  │ │    │ │   (16MB)    │ │    │ │  Parser     │ │    │ │ (buffered)  │ │
+│ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │
+│                 │    │                 │    │                 │    │                 │
+│ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │    │                 │
+│ │ kfree_skb   │ │───▶│ │drop_events  │ │───▶│ │ PacketDrop  │ │───▶│                 │
+│ │ tracepoint  │ │    │ │  (256KB)    │ │    │ │   Parser    │ │    │                 │
+│ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+        │                        │                        │                       │
+   Kernel Space               Ring Buffer              Go Application          Event Stream
+   (eBPF Programs)           (Temporary)               (Event Parsing)         (Buffered)
+                                 │                                                │
+                                 ▼                                                ▼
+                        ┌─────────────────────┐                     ┌─────────────────────┐
+                        │   Always Empty      │                     │ ┌─────────────────┐ │
+                        │                     │                     │ │ Memory Storage  │ │
+                        │ Events consumed     │                     │ │                 │ │
+                        │ immediately by      │                     │ │ • Query Events  │ │
+                        │ userspace readers   │                     │ │ • Time Filters  │ │
+                        └─────────────────────┘                     │ │ • PID Grouping  │ │
+                                                                    │ └─────────────────┘ │
+                                                                    │          │          │
+                                                                    │          ▼          │
+                                                                    │ ┌─────────────────┐ │
+                                                                    │ │   HTTP API      │ │
+                                                                    │ │                 │ │
+                                                                    │ │ /api/list-      │ │
+                                                                    │ │ connections     │ │
+                                                                    │ │                 │ │
+                                                                    │ │ /api/list-      │ │
+                                                                    │ │ packet-drops    │ │
+                                                                    │ └─────────────────┘ │
+                                                                    └─────────────────────┘
+
+
+```
+
+### Ring buffers
+
+Ring buffers in eBPF are designed for real-time streaming:
+
+1. **eBPF programs** write events to ring buffers using `bpf_ringbuf_reserve()` and `bpf_ringbuf_submit()`
+2. **Userspace readers** immediately consume events using `ringbuf.NewReader()`
+3. **Events are parsed** and sent to Go event streams
+4. **Ring buffers become empty** as events are consumed in real-time
+5. **Events are stored** in memory for API queries
+
+Events flow through the pipeline without accumulating in kernel space.
+
 ## Extending the System
 
 📚 **[Complete Development Guide](docs/program-development.md)** - Detailed guide for creating new eBPF monitoring programs
