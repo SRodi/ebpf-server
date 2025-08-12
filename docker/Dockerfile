@@ -17,7 +17,8 @@ RUN go mod download
 COPY . .
 
 # Build the application (eBPF objects should already be compiled on host)
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o ebpf-server ./cmd/server
+RUN mkdir -p bin
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/ebpf-server ./cmd/server
 
 # Runtime stage
 FROM ubuntu:22.04

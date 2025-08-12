@@ -182,15 +182,28 @@ clean-bpf:
 
 # Fresh build - clean eBPF objects and rebuild everything
 .PHONY: fresh-build
-fresh-build: clean-bpf bpf docker-build
+fresh-build: clean-bpf 
+	@if [ "$(OS)" = "Darwin" ]; then \
+		$(MAKE) bpf-cross-compile; \
+	else \
+		$(MAKE) bpf; \
+	fi
+	$(MAKE) docker-build
 	@echo "Fresh build completed with new eBPF objects"
 
 # Fresh build for kind testing - builds everything from scratch
 .PHONY: fresh-kind-build
 fresh-kind-build:
 	@echo "🔄 Starting fresh build for kind testing..."
-# 	@echo "1️⃣  Compiling fresh eBPF objects on host..."
-# 	$(MAKE) bpf
+	@if [ "$(OS)" = "Darwin" ]; then \
+		echo "1️⃣  Cross-compiling fresh eBPF objects for ARM64 Linux..."; \
+		$(MAKE) clean-bpf; \
+		$(MAKE) bpf-cross-compile; \
+	else \
+		echo "1️⃣  Compiling fresh eBPF objects on host..."; \
+		$(MAKE) clean-bpf; \
+		$(MAKE) bpf; \
+	fi
 	@echo "2️⃣  Building fresh Docker images..."
 	$(MAKE) docker-build
 	@echo "3️⃣  Loading images to kind..."
