@@ -1,14 +1,39 @@
 # eBPF Network Monitor
 
-[![CI Pipeline](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml/badge.svg)](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml)
+[### Kubernetes Deployment (New!)
+```bash
+# Quick deployment with built-in script
+./scripts/deploy.sh all --registry your-registry.com
+
+# Or step by step
+make docker-build
+make docker-push REGISTRY=your-registry.com
+make k8s-deploy
+```
+
+### Local Testing with Kind
+```bash
+# Test locally with Kind (Kubernetes in Docker)
+make kind-full-test
+
+# Or step by step:
+make kind-cluster-create  # Create local cluster
+make kind-deploy          # Deploy to kind cluster
+make kind-integration-test # Run comprehensive tests
+```
+
+**📖 [Kubernetes Deployment Guide](kubernetes/README.md)** - Complete setup and configuration guide
+
+**🧪 [Kind Testing Guide](KIND_TESTING.md)** - Local testing with Kind clusterse](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml/badge.svg)](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml)
 [![API Documentation](https://img.shields.io/badge/API-Documentation-blue?style=for-the-badge&logo=swagger)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)
 [![OpenAPI Spec](https://img.shields.io/badge/OpenAPI-3.0-green?style=for-the-badge&logo=openapiinitiative)](docs/swagger.json)
 [![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=for-the-badge&logo=go)](https://golang.org)
 
-A modular eBPF monitoring system with HTTP API server for real-time network and system event monitoring. Features a clean, interface-based architecture for easy extension with new monitoring programs.
+A modular eBPF monitoring system with HTTP API server for real-time network and system event monitoring. **Supports both VM and Kubernetes deployments** with automatic metadata enrichment.
 
-## Quick Start
+## 🚀 Deployment Options
 
+### VM Deployment (Traditional)
 ```bash
 # Install dependencies (Ubuntu/Debian)
 sudo apt install -y golang-go clang libbpf-dev linux-headers-$(uname -r)
@@ -20,13 +45,26 @@ sudo ./bin/ebpf-server
 # Test the API
 curl http://localhost:8080/health
 curl "http://localhost:8080/api/events?type=connection&limit=10"
-curl "http://localhost:8080/api/programs"
 ```
 
-**📚 [View Interactive API Documentation](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)** - Test APIs directly in your browser
+### Kubernetes Deployment (New!)
+```bash
+# Quick deployment with built-in script
+./scripts/deploy.sh all --registry your-registry.com
+
+# Or step by step
+make docker-build
+make docker-push REGISTRY=your-registry.com
+make k8s-deploy
+```
+
+**� [Kubernetes Deployment Guide](kubernetes/README.md)** - Complete setup and configuration guide
+
+**�📚 [View Interactive API Documentation](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)** - Test APIs directly in your browser
 
 ## Architecture
 
+### VM Mode
 **Modular, interface-based monitoring system** with clean separation of concerns:
 
 ```
@@ -47,6 +85,31 @@ curl "http://localhost:8080/api/programs"
           │ Event Storage   │  │ HTTP API  │
           │ (Unified)       │  │ Handlers  │
           └─────────────────┘  └───────────┘
+```
+
+### Kubernetes Mode
+**Distributed monitoring with centralized aggregation**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Kubernetes Cluster                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │    Node 1   │  │    Node 2   │  │        Node N       │  │
+│  │ ┌─────────┐ │  │ ┌─────────┐ │  │   ┌─────────┐       │  │
+│  │ │ eBPF    │ │  │ │ eBPF    │ │  │   │ eBPF    │       │  │
+│  │ │ Agent   │ │  │ │ Agent   │ │  │   │ Agent   │       │  │
+│  │ │+K8s Meta│ │  │ │+K8s Meta│ │  │   │+K8s Meta│       │  │
+│  │ └────┬────┘ │  │ └────┬────┘ │  │   └────┬────┘       │  │
+│  └──────┼──────┘  └──────┼──────┘  └────────┼────────────┘  │
+│         │                │                  │                │
+│         └────────────────┼──────────────────┘                │
+│                          │                                   │
+│                    ┌─────▼─────┐                             │
+│                    │   eBPF    │                             │
+│                    │ Aggregator│◄─── Unified API             │
+│                    │           │                             │
+│                    └───────────┘                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **Core Components:**
@@ -254,10 +317,42 @@ int trace_your_event(void *ctx) {
 char LICENSE[] SEC("license") = "GPL";
 ```
 
+## ✨ Key Features
+
+### 🔄 Dual Deployment Support
+- **VM Mode**: Traditional single-server deployment (unchanged)
+- **Kubernetes Mode**: DaemonSet + Aggregator architecture for cluster-wide monitoring
+- **Automatic Detection**: Seamlessly detects environment and adapts behavior
+
+### 🏷️ Kubernetes Metadata Enrichment  
+Events in Kubernetes include rich metadata:
+```json
+{
+  "id": "abc123",
+  "type": "connection",
+  "k8s_node_name": "worker-node-1",
+  "k8s_pod_name": "ebpf-monitor-xyz",
+  "k8s_namespace": "ebpf-system",
+  ...
+}
+```
+
+### 🏗️ Scalable Architecture
+- **DaemonSet Agents**: One monitoring pod per cluster node
+- **Centralized Aggregator**: Single API endpoint for cluster-wide events
+- **Event Forwarding**: Automatic forwarding from agents to aggregator
+- **Backward Compatible**: Existing VM deployments continue unchanged
+
+### 📊 Unified Monitoring
+- **Cross-Node Correlation**: View events across entire Kubernetes cluster
+- **Node-Specific Filtering**: Query events by specific nodes or pods
+- **Aggregated Statistics**: Cluster-wide event statistics and metrics
+
 ## API Features
 
 - **Unified Event API**: Single `/api/events` endpoint for all monitoring data
-- **Flexible Filtering**: Filter by event type, PID, command, and time windows
+- **Flexible Filtering**: Filter by event type, PID, command, and time windows  
+- **Kubernetes Filtering**: Filter by node name, pod name, or namespace
 - **Program Status**: View program status and metrics via `/api/programs`
 - **Auto-Generated Documentation**: OpenAPI 3.0 spec from code annotations
 - **Interactive Testing**: Built-in Swagger UI for API exploration

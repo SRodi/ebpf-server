@@ -76,7 +76,12 @@ func (p *BaseProgram) Load(ctx context.Context) error {
 
 	logger.Debugf("Loading eBPF program %s from %s", p.name, p.objectPath)
 
-	collection, err := ebpf.LoadCollection(p.objectPath)
+	spec, err := ebpf.LoadCollectionSpec(p.objectPath)
+	if err != nil {
+		return fmt.Errorf("failed to load eBPF collection spec: %w", err)
+	}
+
+	collection, err := ebpf.NewCollection(spec)
 	if err != nil {
 		return fmt.Errorf("failed to load eBPF collection: %w", err)
 	}

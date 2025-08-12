@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ebpf-config
+  namespace: ebpf-system
+data:
+  config.yaml: |
+    # eBPF Monitor Configuration
+    server:
+      port: 8080
+      debug: false
+    
+    aggregator:
+      url: "http://ebpf-aggregator.ebpf-system.svc.cluster.local:8081"
+      timeout: "30s"
+      retry_attempts: 3
+    
+    kubernetes:
+      enabled: true
+      metadata:
+        include_node_name: true
+        include_pod_name: true
+        include_namespace: true

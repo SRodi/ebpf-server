@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/srodi/ebpf-server/internal/core"
+	"github.com/srodi/ebpf-server/internal/kubernetes"
 	"github.com/srodi/ebpf-server/pkg/logger"
 )
 
@@ -22,6 +23,10 @@ var (
 	systemBootTime     time.Time
 	bootTimeCalculated bool
 	bootTimeMutex      sync.Mutex
+	
+	// Global Kubernetes metadata provider
+	k8sProvider *kubernetes.Provider
+	k8sOnce     sync.Once
 )
 
 // calculateSystemBootTime calculates the system boot time.
@@ -106,6 +111,14 @@ type BaseEvent struct {
 	metadata  map[string]interface{}
 }
 
+// getKubernetesProvider returns the global Kubernetes metadata provider.
+func getKubernetesProvider() *kubernetes.Provider {
+	k8sOnce.Do(func() {
+		k8sProvider = kubernetes.NewProvider()
+	})
+	return k8sProvider
+}
+
 // NewBaseEvent creates a new base event.
 func NewBaseEvent(eventType string, pid uint32, command string, timestamp uint64, metadata map[string]interface{}) *BaseEvent {
 	// Generate a unique ID
@@ -121,6 +134,17 @@ func NewBaseEvent(eventType string, pid uint32, command string, timestamp uint64
 	// Convert eBPF timestamp to wall clock time using proper boot time calculation
 	// eBPF timestamps are nanoseconds since boot (from bpf_ktime_get_ns())
 	eventTime := convertEBPFTimestamp(timestamp)
+
+	// Ensure metadata map exists
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+
+	// Add Kubernetes metadata if available
+	k8sProvider := getKubernetesProvider()
+	if k8sProvider.IsEnabled() {
+		k8sProvider.AddToMap(metadata)
+	}
 
 	return &BaseEvent{
 		id:        id,

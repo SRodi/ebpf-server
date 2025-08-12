@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ebpf-aggregator
+  namespace: ebpf-system
+  labels:
+    app: ebpf-aggregator
+    component: aggregator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ebpf-aggregator
+      component: aggregator
+  template:
+    metadata:
+      labels:
+        app: ebpf-aggregator
+        component: aggregator
+    spec:
+      serviceAccount: ebpf-aggregator
+      containers:
+      - name: aggregator
+        image: ebpf-aggregator:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8081
+          name: http
+        env:
+        - name: DEPLOYMENT_MODE
+          value: "kubernetes"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 5
