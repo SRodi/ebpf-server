@@ -250,7 +250,9 @@ help:
 	@echo "Available targets:"
 	@echo "  all         - Generate eBPF bindings and build binaries"
 	@echo "  generate    - Generate eBPF Go bindings"
-	@echo "  bpf         - Compile eBPF programs"
+	@echo "  bpf         - Compile eBPF programs (native)"
+	@echo "  bpf-cross-compile - Cross-compile eBPF programs for ARM64 Linux (macOS only)"
+	@echo "  bpf-cross-clean   - Clean cross-compilation Docker images"
 	@echo "  vmlinux     - Generate vmlinux.h from running kernel (Linux only)"
 	@echo "  build       - Build both server and aggregator binaries"
 	@echo "  build-server - Build the server binary"
@@ -291,12 +293,36 @@ help:
 	@echo "  kind-integration-test - Run comprehensive integration tests"
 	@echo "  kind-cleanup - Clean up kind deployment"
 
+# Cross-compilation targets for macOS
+.PHONY: bpf-cross-compile
+bpf-cross-compile:
+	@if [ "$(OS)" = "Darwin" ]; then \
+		echo "🔄 Cross-compiling eBPF programs for ARM64 Linux using Docker..."; \
+		docker build -t ebpf-cross-compiler -f docker/Dockerfile.cross-compile .; \
+		docker run --name ebpf-temp ebpf-cross-compiler sleep 1; \
+		docker cp ebpf-temp:/workspace/bpf/ ./; \
+		docker rm ebpf-temp; \
+		echo "✅ Cross-compilation completed - eBPF objects ready for ARM64 Linux"; \
+	else \
+		echo "Cross-compilation target is for macOS only. Use 'make bpf' on Linux."; \
+	fi
+
+.PHONY: bpf-cross-clean
+bpf-cross-clean:
+	@echo "🧹 Cleaning cross-compilation Docker images..."
+	-docker rmi ebpf-cross-compiler
+	-docker rm ebpf-temp
+
 # Container build targets
 .PHONY: docker-build
 docker-build: docker-build-agent docker-build-aggregator
 
 .PHONY: docker-build-agent
 docker-build-agent:
+	@if [ "$(OS)" = "Darwin" ]; then \
+		echo "🔄 Cross-compiling eBPF programs before Docker build..."; \
+		$(MAKE) bpf-cross-compile; \
+	fi
 	@echo "Building agent Docker image..."
 	docker build -t $(AGENT_IMAGE) -f docker/Dockerfile .
 

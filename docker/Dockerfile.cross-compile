@@ -1,0 +1,29 @@
+# Cross-compilation Docker image for eBPF programs
+FROM --platform=linux/arm64 ubuntu:22.04
+
+# Install dependencies for eBPF compilation
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    clang \
+    llvm \
+    libbpf-dev \
+    linux-headers-generic \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Copy eBPF source files
+COPY bpf/ ./bpf/
+
+# Compile eBPF programs
+RUN for file in bpf/*.c; do \
+        echo "Compiling $file..."; \
+        clang -O2 -target bpf -D__TARGET_ARCH_arm64 \
+            -I./bpf/include \
+            -Wall \
+            -g -c "$file" -o "${file%.c}.o" || exit 1; \
+    done
+
+# Keep the container running so we can copy files out
+CMD ["tail", "-f", "/dev/null"]
