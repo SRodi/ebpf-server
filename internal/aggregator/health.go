@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/srodi/ebpf-server/pkg/logger"
 )
 
 // HealthCheck represents the aggregator health status.
@@ -56,5 +58,7 @@ func (a *Aggregator) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
 
-	json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		logger.Errorf("Failed to encode health response: %v", err)
+	}
 }

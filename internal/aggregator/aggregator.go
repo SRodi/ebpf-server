@@ -191,11 +191,13 @@ func (a *Aggregator) HandleIngest(w http.ResponseWriter, r *http.Request) {
 
 	// Return success response
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "success",
 		"processed": processed,
 		"total":     len(requestData.Events),
-	})
+	}); err != nil {
+		logger.Errorf("Failed to encode ingest response: %v", err)
+	}
 }
 
 // HandleStats handles HTTP requests for aggregation statistics.
