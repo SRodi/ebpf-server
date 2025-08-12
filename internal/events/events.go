@@ -14,14 +14,20 @@ import (
 	"time"
 
 	"github.com/srodi/ebpf-server/internal/core"
+	"github.com/srodi/ebpf-server/internal/kubernetes"
 	"github.com/srodi/ebpf-server/pkg/logger"
 )
 
 var (
-	// Cached boot time to avoid recalculating it for every event
+	// System boot time calculation (cached)
 	systemBootTime     time.Time
 	bootTimeCalculated bool
 	bootTimeMutex      sync.Mutex
+	
+	// Global Kubernetes metadata provider with proper synchronization
+	k8sProvider *kubernetes.Provider
+	k8sMutex    sync.RWMutex // Protects both k8sProvider and initialization
+	k8sInit     bool         // Tracks if provider is initialized
 )
 
 // calculateSystemBootTime calculates the system boot time.
@@ -106,6 +112,41 @@ type BaseEvent struct {
 	metadata  map[string]interface{}
 }
 
+// getKubernetesProvider returns the global Kubernetes metadata provider.
+// This function is thread-safe and ensures proper synchronization.
+func getKubernetesProvider() *kubernetes.Provider {
+	// Fast path: check if already initialized with read lock
+	k8sMutex.RLock()
+	if k8sInit {
+		provider := k8sProvider
+		k8sMutex.RUnlock()
+		return provider
+	}
+	k8sMutex.RUnlock()
+	
+	// Slow path: need to initialize, acquire write lock
+	k8sMutex.Lock()
+	defer k8sMutex.Unlock()
+	
+	// Double-check after acquiring write lock
+	if !k8sInit {
+		k8sProvider = kubernetes.NewProvider()
+		k8sInit = true
+	}
+	
+	return k8sProvider
+}
+
+// resetKubernetesProvider resets the global Kubernetes provider for testing.
+// This should only be used in test code.
+func resetKubernetesProvider() {
+	k8sMutex.Lock()
+	defer k8sMutex.Unlock()
+	
+	k8sProvider = nil
+	k8sInit = false
+}
+
 // NewBaseEvent creates a new base event.
 func NewBaseEvent(eventType string, pid uint32, command string, timestamp uint64, metadata map[string]interface{}) *BaseEvent {
 	// Generate a unique ID
@@ -121,6 +162,17 @@ func NewBaseEvent(eventType string, pid uint32, command string, timestamp uint64
 	// Convert eBPF timestamp to wall clock time using proper boot time calculation
 	// eBPF timestamps are nanoseconds since boot (from bpf_ktime_get_ns())
 	eventTime := convertEBPFTimestamp(timestamp)
+
+	// Ensure metadata map exists
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+
+	// Add Kubernetes metadata if available
+	k8sProvider := getKubernetesProvider()
+	if k8sProvider.IsEnabled() {
+		k8sProvider.AddToMap(metadata)
+	}
 
 	return &BaseEvent{
 		id:        id,

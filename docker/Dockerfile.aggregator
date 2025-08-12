@@ -1,0 +1,40 @@
+# Build stage
+FROM golang:1.23-bullseye AS builder
+
+WORKDIR /app
+
+# Copy go mod and sum files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the aggregator
+RUN make build-aggregator-only
+
+# Runtime stage
+FROM ubuntu:22.04
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the binary from builder stage
+COPY --from=builder /app/bin/ebpf-aggregator .
+
+# Create non-root user
+RUN useradd -m -s /bin/bash aggregator
+
+# Expose ports
+EXPOSE 8081
+
+# Run as non-root user
+USER aggregator
+
+ENTRYPOINT ["./ebpf-aggregator"]

@@ -1,10 +1,24 @@
 # ebpf-server - HTTP API Server with eBPF Network Monitoring
+#
+# Project Structure:
+#   - docker/: Docker build files (Dockerfile, Dockerfile.aggregator)
+#   - scripts/: Deployment and testing scripts
+#   - kubernetes/: Kubernetes manifests
+#   - bpf/: eBPF source code and compiled objects
+#
 
 # Variables
 BINARY_NAME := ebpf-server
+AGGREGATOR_NAME := ebpf-aggregator
 BPF_SOURCES := $(wildcard bpf/*.c)
 BPF_OBJECTS := $(BPF_SOURCES:.c=.o)
 GO_SOURCES := $(shell find . -name '*.go' -not -path './vendor/*')
+
+# Container settings
+REGISTRY ?= localhost:5000
+TAG ?= latest
+AGENT_IMAGE := $(REGISTRY)/$(BINARY_NAME):$(TAG)
+AGGREGATOR_IMAGE := $(REGISTRY)/$(AGGREGATOR_NAME):$(TAG)
 
 # Detect architecture and OS
 ARCH := $(shell uname -m)
@@ -65,17 +79,38 @@ vmlinux:
 		-Wall \
 		-g -c $< -o $@
 
-# Build the Go binary (HTTP transport)
-.PHONY: build
-build: generate
+# Build all eBPF programs
+.PHONY: bpf
+bpf: $(BPF_OBJECTS)
+	@echo "All eBPF programs compiled successfully"
+
+# Build the Go binary (server)
+.PHONY: build-server
+build-server: generate
 	@echo "Building $(BINARY_NAME)..."
 	go build -o bin/$(BINARY_NAME) ./cmd/server
+
+# Build the aggregator binary
+.PHONY: build-aggregator
+build-aggregator: generate docs-aggregator
+	@echo "Building $(AGGREGATOR_NAME)..."
+	go build -o bin/$(AGGREGATOR_NAME) ./cmd/aggregator
+
+# Build the aggregator binary without eBPF dependencies (for Docker)
+.PHONY: build-aggregator-only
+build-aggregator-only: docs-aggregator
+	@echo "Building $(AGGREGATOR_NAME) (no eBPF dependencies)..."
+	go build -o bin/$(AGGREGATOR_NAME) ./cmd/aggregator
+
+# Build both binaries
+.PHONY: build
+build: build-server build-aggregator
 
 # Build development version with debug symbols and verbose debug logging
 .PHONY: build-dev
 build-dev: generate
 	@echo "Building $(BINARY_NAME) with debug symbols and debug logging..."
-	go build -race -tags debug -o bin/$(BINARY_NAME)-dev ./cmd/server
+	CGO_ENABLED=1 CC=clang go build -race -tags debug -o bin/$(BINARY_NAME)-dev ./cmd/server
 
 # Run the server (requires root for eBPF) - HTTP transport
 .PHONY: run
@@ -139,6 +174,42 @@ clean:
 	rm -rf bin/
 	rm -rf bpf/*.o
 
+# Clean only eBPF objects (for fresh compilation)
+.PHONY: clean-bpf
+clean-bpf:
+	@echo "Cleaning eBPF object files..."
+	rm -rf bpf/*.o
+
+# Fresh build - clean eBPF objects and rebuild everything
+.PHONY: fresh-build
+fresh-build: clean-bpf 
+	@if [ "$(OS)" = "Darwin" ]; then \
+		$(MAKE) bpf-cross-compile; \
+	else \
+		$(MAKE) bpf; \
+	fi
+	$(MAKE) docker-build
+	@echo "Fresh build completed with new eBPF objects"
+
+# Fresh build for kind testing - builds everything from scratch
+.PHONY: fresh-kind-build
+fresh-kind-build:
+	@echo "🔄 Starting fresh build for kind testing..."
+	@if [ "$(OS)" = "Darwin" ]; then \
+		echo "1️⃣  Cross-compiling fresh eBPF objects for ARM64 Linux..."; \
+		$(MAKE) clean-bpf; \
+		$(MAKE) bpf-cross-compile; \
+	else \
+		echo "1️⃣  Compiling fresh eBPF objects on host..."; \
+		$(MAKE) clean-bpf; \
+		$(MAKE) bpf; \
+	fi
+	@echo "2️⃣  Building fresh Docker images..."
+	$(MAKE) docker-build
+	@echo "3️⃣  Loading images to kind..."
+	$(MAKE) kind-load-images
+	@echo "✅ Fresh kind build completed!"
+
 # Generate API documentation using Swagger
 .PHONY: docs
 docs:
@@ -147,6 +218,18 @@ docs:
 	@echo "API documentation generated at docs/swagger/"
 	@echo "Interactive docs: http://localhost:8080/docs/ (when server is running)"
 	@echo "External docs: https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger.json"
+
+# Generate aggregator API documentation using Swagger
+.PHONY: docs-aggregator
+docs-aggregator:
+	@command -v $(shell go env GOPATH)/bin/swag >/dev/null 2>&1 || { echo "Installing swag..."; go install github.com/swaggo/swag/cmd/swag@latest; }
+	$(shell go env GOPATH)/bin/swag init -g internal/aggregator/aggregator.go -o docs/swagger-aggregator --parseDependency --parseInternal
+	@echo "Aggregator API documentation generated at docs/swagger-aggregator/"
+	@echo "Interactive docs: http://localhost:8081/swagger/ (when aggregator is running)"
+
+# Generate all documentation
+.PHONY: docs-all
+docs-all: docs docs-aggregator
 
 # Install the binary system-wide
 .PHONY: install
@@ -190,24 +273,200 @@ check-deps:
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  all         - Generate eBPF bindings and build the binary"
+	@echo "  all         - Generate eBPF bindings and build binaries"
 	@echo "  generate    - Generate eBPF Go bindings"
+	@echo "  bpf         - Compile eBPF programs (native)"
+	@echo "  bpf-cross-compile - Cross-compile eBPF programs for ARM64 Linux (macOS only)"
+	@echo "  bpf-cross-clean   - Clean cross-compilation Docker images"
 	@echo "  vmlinux     - Generate vmlinux.h from running kernel (Linux only)"
-	@echo "  build       - Build the release binary"
+	@echo "  build       - Build both server and aggregator binaries"
+	@echo "  build-server - Build the server binary"
+	@echo "  build-aggregator - Build the aggregator binary"
 	@echo "  build-dev   - Build development binary with debug symbols"
 	@echo "  run         - Run the server (requires root)"
 	@echo "  run-dev     - Run development server"
-	@echo "  deps        - Install Go dependencies"
-	@echo "  test        - Run tests"
-	@echo "  test-race   - Run tests with race detection"
-	@echo "  lint        - Run linters"
-	@echo "  fmt         - Format code"
+	@echo "  test        - Run all tests"
+	@echo "  test-unit   - Run unit tests only"
+	@echo "  test-integration - Run integration tests only"
+	@echo "  check       - Run linting and static analysis"
+	@echo "  deps        - Install dependencies"
+	@echo "  check-deps  - Check if dependencies are installed"
 	@echo "  clean       - Clean build artifacts"
-	@echo "  install     - Install binary system-wide"
-	@echo "  uninstall   - Remove binary from system"
-	@echo "  dev-setup   - Setup development tools"
-	@echo "  check-deps  - Check system dependencies"
-	@echo "  help        - Show this help message"
+	@echo "  clean-bpf   - Clean only eBPF object files"
+	@echo "  fresh-build - Clean eBPF objects and rebuild everything"
+	@echo "  fresh-kind-build - Fresh build for kind testing"
+	@echo ""
+	@echo "Container targets:"
+	@echo "  docker-build - Build Docker images (using docker/Dockerfile*)"
+	@echo "  docker-push  - Push Docker images to registry"
+	@echo "  docker-build-agent - Build agent Docker image"
+	@echo "  docker-build-aggregator - Build aggregator Docker image"
+	@echo ""
+	@echo "Kubernetes targets:"
+	@echo "  k8s-deploy   - Deploy to Kubernetes"
+	@echo "  k8s-undeploy - Remove from Kubernetes"
+	@echo "  k8s-logs     - Show logs from pods"
+	@echo "  k8s-status   - Show pod status"
+	@echo ""
+	@echo "Kind (local testing) targets (using scripts/):"
+	@echo "  kind-check-deps  - Check prerequisites for kind testing"
+	@echo "  kind-cluster-create - Create kind cluster with local registry"
+	@echo "  kind-cluster-delete - Delete kind cluster and registry"
+	@echo "  kind-deploy  - Build and deploy to kind cluster"
+	@echo "  kind-test    - Deploy and run basic tests in kind"
+	@echo "  kind-full-test - Create cluster, deploy, and test"
+	@echo "  kind-integration-test - Run comprehensive integration tests"
+	@echo "  kind-cleanup - Clean up kind deployment"
+
+# Cross-compilation targets for macOS
+.PHONY: bpf-cross-compile
+bpf-cross-compile:
+	@if [ "$(OS)" = "Darwin" ]; then \
+		echo "🔄 Cross-compiling eBPF programs for ARM64 Linux using Docker..."; \
+		docker build -t ebpf-cross-compiler -f docker/Dockerfile.cross-compile .; \
+		docker run --name ebpf-temp ebpf-cross-compiler sleep 1; \
+		docker cp ebpf-temp:/workspace/bpf/ ./; \
+		docker rm ebpf-temp; \
+		echo "✅ Cross-compilation completed - eBPF objects ready for ARM64 Linux"; \
+	else \
+		echo "Cross-compilation target is for macOS only. Use 'make bpf' on Linux."; \
+	fi
+
+.PHONY: bpf-cross-clean
+bpf-cross-clean:
+	@echo "🧹 Cleaning cross-compilation Docker images..."
+	-docker rmi ebpf-cross-compiler
+	-docker rm ebpf-temp
+
+# Container build targets
+.PHONY: docker-build
+docker-build: docker-build-agent docker-build-aggregator
+
+.PHONY: docker-build-agent
+docker-build-agent:
+	@if [ "$(OS)" = "Darwin" ]; then \
+		echo "🔄 Cross-compiling eBPF programs before Docker build..."; \
+		$(MAKE) bpf-cross-compile; \
+	fi
+	@echo "Building agent Docker image..."
+	docker build -t $(AGENT_IMAGE) -f docker/Dockerfile .
+
+.PHONY: docker-build-aggregator
+docker-build-aggregator:
+	@echo "Building aggregator Docker image..."
+	docker build -t $(AGGREGATOR_IMAGE) -f docker/Dockerfile.aggregator .
+
+.PHONY: docker-push
+docker-push:
+	@echo "Pushing Docker images..."
+	docker push $(AGENT_IMAGE)
+	docker push $(AGGREGATOR_IMAGE)
+
+# Kubernetes targets
+.PHONY: k8s-deploy
+k8s-deploy:
+	@echo "Deploying to Kubernetes..."
+	kubectl apply -f kubernetes/namespace.yaml
+	kubectl apply -f kubernetes/rbac.yaml
+	kubectl apply -f kubernetes/configmap.yaml
+	kubectl apply -f kubernetes/services.yaml
+	kubectl apply -f kubernetes/aggregator-deployment.yaml
+	kubectl apply -f kubernetes/daemonset.yaml
+	@echo "Waiting for deployments to be ready..."
+	kubectl wait --for=condition=available --timeout=300s deployment/ebpf-aggregator -n ebpf-system
+	kubectl rollout status daemonset/ebpf-monitor -n ebpf-system --timeout=300s
+
+.PHONY: k8s-undeploy
+k8s-undeploy:
+	@echo "Removing from Kubernetes..."
+	-kubectl delete -f kubernetes/daemonset.yaml
+	-kubectl delete -f kubernetes/aggregator-deployment.yaml
+	-kubectl delete -f kubernetes/services.yaml
+	-kubectl delete -f kubernetes/configmap.yaml
+	-kubectl delete -f kubernetes/rbac.yaml
+	-kubectl delete -f kubernetes/namespace.yaml
+
+.PHONY: k8s-logs
+k8s-logs:
+	@echo "Showing aggregator logs..."
+	kubectl logs -l app=ebpf-aggregator -n ebpf-system --tail=100 -f
+
+.PHONY: k8s-logs-agents
+k8s-logs-agents:
+	@echo "Showing agent logs..."
+	kubectl logs -l app=ebpf-monitor -n ebpf-system --tail=50
+
+.PHONY: k8s-status
+k8s-status:
+	@echo "Checking deployment status..."
+	kubectl get pods -n ebpf-system
+	kubectl get services -n ebpf-system
+	kubectl get daemonset -n ebpf-system
+	kubectl get deployment -n ebpf-system
+
+# Combined build and deploy target
+.PHONY: k8s-build-deploy
+k8s-build-deploy: docker-build docker-push k8s-deploy
+
+# Kind (Kubernetes in Docker) targets for local testing
+KIND_CLUSTER_NAME ?= ebpf-test
+KIND_REGISTRY_NAME ?= kind-registry
+KIND_REGISTRY_PORT ?= 5001
+KIND_NODE_IMAGE ?= kindest/node:v1.28.0
+
+.PHONY: kind-check-deps
+kind-check-deps:
+	@echo "🔍 Checking Kind testing prerequisites..."
+	@which kind > /dev/null || (echo "❌ Kind not found. Install from: https://kind.sigs.k8s.io/docs/user/quick-start/" && exit 1)
+	@which docker > /dev/null || (echo "❌ Docker not found. Install Docker Desktop or Docker Engine" && exit 1)
+	@which kubectl > /dev/null || (echo "❌ kubectl not found. Install from: https://kubernetes.io/docs/tasks/tools/" && exit 1)
+	@which jq > /dev/null || (echo "⚠️  jq not found. Install for better test output: https://stedolan.github.io/jq/")
+	@which curl > /dev/null || (echo "❌ curl not found. Install curl" && exit 1)
+	@docker info > /dev/null 2>&1 || (echo "❌ Docker is not running. Start Docker Desktop or Docker daemon" && exit 1)
+	@echo "✅ All prerequisites available!"
+
+.PHONY: kind-cluster-create
+kind-cluster-create: kind-check-deps
+	@./scripts/create-kind-cluster.sh
+
+.PHONY: kind-cluster-delete
+kind-cluster-delete:
+	@echo "🗑️ Deleting kind cluster and registry..."
+	-kind delete cluster --name $(KIND_CLUSTER_NAME)
+	-docker rm -f $(KIND_REGISTRY_NAME)
+	@echo "✅ Kind cluster and registry deleted"
+
+.PHONY: kind-load-images
+kind-load-images: docker-build
+	@./scripts/load-kind-images.sh
+
+.PHONY: kind-deploy
+kind-deploy: kind-load-images
+	@./scripts/deploy-to-kind.sh
+
+.PHONY: kind-test
+kind-test: fresh-kind-build kind-deploy
+	@./scripts/test-kind-deployment.sh
+
+.PHONY: kind-full-test
+kind-full-test: kind-cluster-create kind-test
+	@echo "🎉 Full kind cluster test completed!"
+
+.PHONY: kind-integration-test
+kind-integration-test: kind-deploy
+	@echo "🧪 Running comprehensive integration tests..."
+	./scripts/test-kind.sh --automated
+
+.PHONY: kind-cleanup
+kind-cleanup:
+	@echo "🧹 Cleaning up kind deployment..."
+	-kubectl delete -f kubernetes/daemonset.yaml
+	-kubectl delete -f kubernetes/aggregator-deployment.yaml
+	-kubectl delete -f kubernetes/services.yaml
+	-kubectl delete -f kubernetes/configmap.yaml
+	-kubectl delete -f kubernetes/rbac.yaml
+	-kubectl delete -f kubernetes/namespace.yaml
+	@echo "✅ Kind deployment cleaned up"
 
 # Create necessary directories
 bin:
