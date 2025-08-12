@@ -2,7 +2,6 @@ package events
 
 import (
 	"os"
-	"sync"
 	"testing"
 	"time"
 )
@@ -20,9 +19,8 @@ func TestKubernetesMetadataIntegration(t *testing.T) {
 		os.Setenv("NODE_NAME", originalNodeName)
 		os.Setenv("POD_NAME", originalPodName)
 		os.Setenv("POD_NAMESPACE", originalNamespace)
-		// Reset the provider for future tests
-		k8sProvider = nil
-		k8sOnce = sync.Once{}
+		// Reset the provider for future tests using the safe method
+		resetKubernetesProvider()
 	}()
 
 	t.Run("VM mode - no Kubernetes metadata", func(t *testing.T) {
@@ -32,9 +30,8 @@ func TestKubernetesMetadataIntegration(t *testing.T) {
 		os.Unsetenv("POD_NAME")
 		os.Unsetenv("POD_NAMESPACE")
 		
-		// Reset provider
-		k8sProvider = nil
-		k8sOnce = sync.Once{}
+		// Reset provider using the safe method
+		resetKubernetesProvider()
 
 		metadata := map[string]interface{}{
 			"custom_field": "test_value",
@@ -67,9 +64,8 @@ func TestKubernetesMetadataIntegration(t *testing.T) {
 		os.Setenv("POD_NAME", "ebpf-monitor-abcde")
 		os.Setenv("POD_NAMESPACE", "ebpf-system")
 		
-		// Reset provider to pick up new env vars
-		k8sProvider = nil
-		k8sOnce = sync.Once{}
+		// Reset provider to pick up new env vars using the safe method
+		resetKubernetesProvider()
 
 		metadata := map[string]interface{}{
 			"custom_field": "test_value",

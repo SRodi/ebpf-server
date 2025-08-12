@@ -19,14 +19,15 @@ import (
 )
 
 var (
-	// Cached boot time to avoid recalculating it for every event
+	// System boot time calculation (cached)
 	systemBootTime     time.Time
 	bootTimeCalculated bool
 	bootTimeMutex      sync.Mutex
 	
-	// Global Kubernetes metadata provider
+	// Global Kubernetes metadata provider with proper synchronization
 	k8sProvider *kubernetes.Provider
-	k8sOnce     sync.Once
+	k8sMutex    sync.RWMutex // Protects both k8sProvider and initialization
+	k8sInit     bool         // Tracks if provider is initialized
 )
 
 // calculateSystemBootTime calculates the system boot time.
@@ -112,11 +113,38 @@ type BaseEvent struct {
 }
 
 // getKubernetesProvider returns the global Kubernetes metadata provider.
+// This function is thread-safe and ensures proper synchronization.
 func getKubernetesProvider() *kubernetes.Provider {
-	k8sOnce.Do(func() {
+	// Fast path: check if already initialized with read lock
+	k8sMutex.RLock()
+	if k8sInit {
+		provider := k8sProvider
+		k8sMutex.RUnlock()
+		return provider
+	}
+	k8sMutex.RUnlock()
+	
+	// Slow path: need to initialize, acquire write lock
+	k8sMutex.Lock()
+	defer k8sMutex.Unlock()
+	
+	// Double-check after acquiring write lock
+	if !k8sInit {
 		k8sProvider = kubernetes.NewProvider()
-	})
+		k8sInit = true
+	}
+	
 	return k8sProvider
+}
+
+// resetKubernetesProvider resets the global Kubernetes provider for testing.
+// This should only be used in test code.
+func resetKubernetesProvider() {
+	k8sMutex.Lock()
+	defer k8sMutex.Unlock()
+	
+	k8sProvider = nil
+	k8sInit = false
 }
 
 // NewBaseEvent creates a new base event.
