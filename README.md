@@ -1,6 +1,18 @@
 # eBPF Network Monitor
 
-[### Kubernetes Deployment (New!)
+[![CI](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml/badge.svg)](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml)
+[![API Documentation](https://img.shields.io/badge/API-Documentation-blue?style=for-the-badge&logo=swagger)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)
+[![OpenAPI Spec](https://img.shields.io/badge/OpenAPI-3.0-green?style=for-the-badge&logo=openapiinitiative)](docs/swagger.json)
+[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=for-the-badge&logo=go)](https://golang.org)
+
+A modular eBPF monitoring system with HTTP API server for real-time network and system event monitoring. **Supports both VM and Kubernetes deployments** with automatic metadata enrichment.
+
+## 🚀 Deployment Options
+
+### Kubernetes Deployment (Recommended)
+
+Deploy across your entire Kubernetes cluster with automatic node metadata enrichment:
+
 ```bash
 # Quick deployment with built-in script
 ./scripts/deploy.sh all --registry your-registry.com
@@ -11,29 +23,26 @@ make docker-push REGISTRY=your-registry.com
 make k8s-deploy
 ```
 
+**📖 [Complete Kubernetes Guide](kubernetes/README.md)** - Detailed setup and configuration
+
 ### Local Testing with Kind
+
+Test the full Kubernetes deployment locally:
+
 ```bash
-# Test locally with Kind (Kubernetes in Docker)
+# Full automated test
 make kind-full-test
 
 # Or step by step:
-make kind-cluster-create  # Create local cluster
-make kind-deploy          # Deploy to kind cluster
+make kind-cluster-create    # Create local cluster
+make kind-deploy           # Deploy to kind cluster  
 make kind-integration-test # Run comprehensive tests
 ```
 
-**📖 [Kubernetes Deployment Guide](kubernetes/README.md)** - Complete setup and configuration guide
-
-**🧪 [Kind Testing Guide](KIND_TESTING.md)** - Local testing with Kind clusterse](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml/badge.svg)](https://github.com/srodi/ebpf-server/actions/workflows/ci.yml)
-[![API Documentation](https://img.shields.io/badge/API-Documentation-blue?style=for-the-badge&logo=swagger)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)
-[![OpenAPI Spec](https://img.shields.io/badge/OpenAPI-3.0-green?style=for-the-badge&logo=openapiinitiative)](docs/swagger.json)
-[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=for-the-badge&logo=go)](https://golang.org)
-
-A modular eBPF monitoring system with HTTP API server for real-time network and system event monitoring. **Supports both VM and Kubernetes deployments** with automatic metadata enrichment.
-
-## 🚀 Deployment Options
-
 ### VM Deployment (Traditional)
+
+For single-server deployments:
+
 ```bash
 # Install dependencies (Ubuntu/Debian)
 sudo apt install -y golang-go clang libbpf-dev linux-headers-$(uname -r)
@@ -47,281 +56,13 @@ curl http://localhost:8080/health
 curl "http://localhost:8080/api/events?type=connection&limit=10"
 ```
 
-### Kubernetes Deployment (New!)
-```bash
-# Quick deployment with built-in script
-./scripts/deploy.sh all --registry your-registry.com
-
-# Or step by step
-make docker-build
-make docker-push REGISTRY=your-registry.com
-make k8s-deploy
-```
-
-**� [Kubernetes Deployment Guide](kubernetes/README.md)** - Complete setup and configuration guide
-
-**�📚 [View Interactive API Documentation](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)** - Test APIs directly in your browser
-
-## Architecture
-
-### VM Mode
-**Modular, interface-based monitoring system** with clean separation of concerns:
-
-```
-┌───────────────────────────────────────────────────────────┐
-│                        System Layer                       │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │                  Manager                            │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │  │
-│  │  │ Connection  │  │ Packet Drop │  │   Your New  │  │  │
-│  │  │ Program     │  │ Program     │  │   Program   │  │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  │  │
-│  └─────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────┘
-                            │
-                   ┌────────┴────────┐
-                   │                 │
-          ┌────────▼────────┐  ┌─────▼─────┐
-          │ Event Storage   │  │ HTTP API  │
-          │ (Unified)       │  │ Handlers  │
-          └─────────────────┘  └───────────┘
-```
-
-### Kubernetes Mode
-**Distributed monitoring with centralized aggregation**:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Kubernetes Cluster                       │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │    Node 1   │  │    Node 2   │  │        Node N       │  │
-│  │ ┌─────────┐ │  │ ┌─────────┐ │  │   ┌─────────┐       │  │
-│  │ │ eBPF    │ │  │ │ eBPF    │ │  │   │ eBPF    │       │  │
-│  │ │ Agent   │ │  │ │ Agent   │ │  │   │ Agent   │       │  │
-│  │ │+K8s Meta│ │  │ │+K8s Meta│ │  │   │+K8s Meta│       │  │
-│  │ └────┬────┘ │  │ └────┬────┘ │  │   └────┬────┘       │  │
-│  └──────┼──────┘  └──────┼──────┘  └────────┼────────────┘  │
-│         │                │                  │                │
-│         └────────────────┼──────────────────┘                │
-│                          │                                   │
-│                    ┌─────▼─────┐                             │
-│                    │   eBPF    │                             │
-│                    │ Aggregator│◄─── Unified API             │
-│                    │           │                             │
-│                    └───────────┘                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Core Components:**
-- **Core Interfaces**: Define contracts for Events, Programs, Managers, and Storage
-- **Event System**: Unified event creation, streaming, and storage with `BaseEvent`
-- **Program Manager**: Coordinates program lifecycle and provides unified event streams
-- **Storage Layer**: Persistent event storage with query capabilities  
-- **API Layer**: HTTP endpoints for querying events and program status
-- **System Layer**: Top-level coordination and initialization
-
-## Event Flow Architecture
-
-The system processes events through a real-time streaming pipeline that ensures low latency and high throughput:
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   eBPF Program  │    │   Ring Buffer   │    │  Event Parser   │    │  Event Stream   │
-│                 │    │                 │    │                 │    │                 │
-│ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │
-│ │ sys_connect │ │───▶│ │   events    │ │───▶│ │ Connection  │ │───▶│ │   Channel   │ │
-│ │ tracepoint  │ │    │ │   (16MB)    │ │    │ │  Parser     │ │    │ │ (buffered)  │ │
-│ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │
-│                 │    │                 │    │                 │    │                 │
-│ ┌─────────────┐ │    │ ┌─────────────┐ │    │ ┌─────────────┐ │    │                 │
-│ │ kfree_skb   │ │───▶│ │drop_events  │ │───▶│ │ PacketDrop  │ │───▶│                 │
-│ │ tracepoint  │ │    │ │  (256KB)    │ │    │ │   Parser    │ │    │                 │
-│ └─────────────┘ │    │ └─────────────┘ │    │ └─────────────┘ │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
-        │                        │                        │                       │
-   Kernel Space               Ring Buffer              Go Application          Event Stream
-   (eBPF Programs)           (Temporary)               (Event Parsing)         (Buffered)
-                                 │                                                │
-                                 ▼                                                ▼
-                        ┌─────────────────────┐                     ┌─────────────────────┐
-                        │   Always Empty      │                     │ ┌─────────────────┐ │
-                        │                     │                     │ │ Memory Storage  │ │
-                        │ Events consumed     │                     │ │                 │ │
-                        │ immediately by      │                     │ │ • Query Events  │ │
-                        │ userspace readers   │                     │ │ • Time Filters  │ │
-                        └─────────────────────┘                     │ │ • PID Grouping  │ │
-                                                                    │ └─────────────────┘ │
-                                                                    │          │          │
-                                                                    │          ▼          │
-                                                                    │ ┌─────────────────┐ │
-                                                                    │ │   HTTP API      │ │
-                                                                    │ │                 │ │
-                                                                    │ │ /api/list-      │ │
-                                                                    │ │ connections     │ │
-                                                                    │ │                 │ │
-                                                                    │ │ /api/list-      │ │
-                                                                    │ │ packet-drops    │ │
-                                                                    │ └─────────────────┘ │
-                                                                    └─────────────────────┘
-
-
-```
-
-### Ring buffers
-
-Ring buffers in eBPF are designed for real-time streaming:
-
-1. **eBPF programs** write events to ring buffers using `bpf_ringbuf_reserve()` and `bpf_ringbuf_submit()`
-2. **Userspace readers** immediately consume events using `ringbuf.NewReader()`
-3. **Events are parsed** and sent to Go event streams
-4. **Ring buffers become empty** as events are consumed in real-time
-5. **Events are stored** in memory for API queries
-
-Events flow through the pipeline without accumulating in kernel space.
-
-## Extending the System
-
-📚 **[Complete Development Guide](docs/program-development.md)** - Detailed guide for creating new eBPF monitoring programs
-
-### Quick Example: Create a New Monitoring Program
-
-### 1. Create a New Monitoring Program
-
-```bash
-mkdir -p internal/programs/your_monitor
-```
-
-### 2. Implement Your Program
-
-Create `internal/programs/your_monitor/your_monitor.go`:
-
-```go
-package your_monitor
-
-import (
-    "context"
-    "encoding/binary"
-    "fmt"
-    
-    "github.com/srodi/ebpf-server/internal/core"
-    "github.com/srodi/ebpf-server/internal/events"
-    "github.com/srodi/ebpf-server/internal/programs"
-    "github.com/srodi/ebpf-server/pkg/logger"
-)
-
-const (
-    ProgramName        = "your_monitor"
-    ProgramDescription = "Monitors your custom events"
-    ObjectPath         = "bpf/your_monitor.o"
-    TracepointProgram  = "trace_your_event"
-    EventsMapName      = "events"
-)
-
-type Program struct {
-    *programs.BaseProgram
-}
-
-func NewProgram() *Program {
-    base := programs.NewBaseProgram(ProgramName, ProgramDescription, ObjectPath)
-    return &Program{BaseProgram: base}
-}
-
-func (p *Program) Attach(ctx context.Context) error {
-    if !p.IsLoaded() {
-        return fmt.Errorf("program not loaded")
-    }
-    
-    logger.Debugf("Attaching %s program", ProgramName)
-    
-    if err := p.AttachTracepoint("syscalls", "your_event", TracepointProgram); err != nil {
-        return fmt.Errorf("failed to attach: %w", err)
-    }
-    
-    if err := p.StartEventProcessing(ctx, EventsMapName, p.parseEvent); err != nil {
-        return fmt.Errorf("failed to start processing: %w", err)
-    }
-    
-    p.SetAttached(true)
-    return nil
-}
-
-func (p *Program) parseEvent(data []byte) (core.Event, error) {
-    if len(data) < 24 {
-        return nil, fmt.Errorf("insufficient data: %d bytes", len(data))
-    }
-    
-    pid := binary.LittleEndian.Uint32(data[0:4])
-    timestamp := binary.LittleEndian.Uint64(data[4:12])
-    command := extractNullTerminatedString(data[12:])
-    
-    metadata := map[string]interface{}{
-        "custom_field": "custom_value",
-    }
-    
-    return events.NewBaseEvent(ProgramName, pid, command, timestamp, metadata), nil
-}
-```
-### 3. Register Your Program
-
-Add to `internal/system/system.go` in the `Initialize()` method:
-
-```go
-// Register your program
-yourProgram := your_monitor.NewProgram()
-if err := s.manager.RegisterProgram(yourProgram); err != nil {
-    return fmt.Errorf("failed to register your_monitor: %w", err)
-}
-logger.Debugf("✅ Registered your monitoring program")
-```
-
-### 4. Create eBPF C Code
-
-Create `bpf/your_monitor.c`:
-
-```c
-#include "vmlinux.h"
-#include "bpf_helpers.h"
-#include "bpf_tracing.h"
-
-struct your_event {
-    u32 pid;
-    u64 timestamp;
-    char comm[16];
-    char custom_field[64];
-};
-
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 256 * 1024);
-} events SEC(".maps");
-
-SEC("tracepoint/syscalls/your_event")
-int trace_your_event(void *ctx) {
-    struct your_event *event;
-    
-    event = bpf_ringbuf_reserve(&events, sizeof(*event), 0);
-    if (!event) {
-        return 0;
-    }
-    
-    event->pid = bpf_get_current_pid_tgid() >> 32;
-    event->timestamp = bpf_ktime_get_ns();
-    bpf_get_current_comm(&event->comm, sizeof(event->comm));
-    
-    // Add your custom logic here
-    
-    bpf_ringbuf_submit(event, 0);
-    return 0;
-}
-
-char LICENSE[] SEC("license") = "GPL";
-```
+**📚 [Interactive API Documentation](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger/swagger.json)** - Test APIs in your browser
 
 ## ✨ Key Features
 
 ### 🔄 Dual Deployment Support
-- **VM Mode**: Traditional single-server deployment (unchanged)
 - **Kubernetes Mode**: DaemonSet + Aggregator architecture for cluster-wide monitoring
+- **VM Mode**: Traditional single-server deployment
 - **Automatic Detection**: Seamlessly detects environment and adapts behavior
 
 ### 🏷️ Kubernetes Metadata Enrichment  
@@ -338,17 +79,60 @@ Events in Kubernetes include rich metadata:
 ```
 
 ### 🏗️ Scalable Architecture
-- **DaemonSet Agents**: One monitoring pod per cluster node
-- **Centralized Aggregator**: Single API endpoint for cluster-wide events
-- **Event Forwarding**: Automatic forwarding from agents to aggregator
-- **Backward Compatible**: Existing VM deployments continue unchanged
+
+**Kubernetes Mode**: Distributed monitoring with centralized aggregation
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Kubernetes Cluster                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │    Node 1   │  │    Node 2   │  │        Node N   │  │
+│  │ ┌─────────┐ │  │ ┌─────────┐ │  │   ┌─────────┐   │  │
+│  │ │ eBPF    │ │  │ │ eBPF    │ │  │   │ eBPF    │   │  │
+│  │ │ Agent   │ │  │ │ Agent   │ │  │   │ Agent   │   │  │
+│  │ │+K8s Meta│ │  │ │+K8s Meta│ │  │   │+K8s Meta│   │  │
+│  │ └────┬────┘ │  │ └────┬────┘ │  │   └────┬────┘   │  │
+│  └──────┼──────┘  └──────┼──────┘  └────────┼────────┘  │
+│         │                │                  │           │
+│         └────────────────┼──────────────────┘           │
+│                          │                              │
+│                    ┌─────▼─────┐                        │
+│                    │   eBPF    │                        │
+│                    │ Aggregator│◄─── Unified API        │
+│                    │           │                        │
+│                    └───────────┘                        │
+└─────────────────────────────────────────────────────────┘
+```
+
+**VM Mode**: Modular, interface-based monitoring system
+```
+┌─────────────────────────────────────────────────────┐
+│                     eBPF Programs                   │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │ Connection  │  │ Packet Drop │  │   Custom    │  │
+│  │ Monitor     │  │ Monitor     │  │   Monitors  │  │
+│  └──────┬──────┘  └──────┬──────┘  └─────────┬───┘  │
+└─────────┼─────────────────┼──────────────────┼-─────┘
+          │                 │                  │
+          └─────────────────┼──────────────────┘
+                            ▼
+               ┌─────────────────────────┐
+               │    Event Processing     │
+               │   (Manager + Storage)   │
+               └─────────────┬───────────┘
+                             ▼
+               ┌─────────────────────────┐
+               │       HTTP API          │
+               │    (/api/events)        │
+               └─────────────────────────┘
+```
 
 ### 📊 Unified Monitoring
 - **Cross-Node Correlation**: View events across entire Kubernetes cluster
 - **Node-Specific Filtering**: Query events by specific nodes or pods
 - **Aggregated Statistics**: Cluster-wide event statistics and metrics
+- **Backward Compatible**: Existing VM deployments continue unchanged
 
-## API Features
+## 📡 API Features
 
 - **Unified Event API**: Single `/api/events` endpoint for all monitoring data
 - **Flexible Filtering**: Filter by event type, PID, command, and time windows  
@@ -357,15 +141,13 @@ Events in Kubernetes include rich metadata:
 - **Auto-Generated Documentation**: OpenAPI 3.0 spec from code annotations
 - **Interactive Testing**: Built-in Swagger UI for API exploration
 
-## API Endpoints
-
 ### Core Endpoints
 
 - **`GET /health`** - System health and status
 - **`GET /api/events`** - Query events with filtering support
 - **`GET /api/programs`** - List all programs and their status
 
-### Event Query Examples
+### Query Examples
 
 ```bash
 # Get all connection events from the last hour
@@ -374,8 +156,8 @@ curl "http://localhost:8080/api/events?type=connection&since=2023-01-01T00:00:00
 # Get events for a specific process
 curl "http://localhost:8080/api/events?pid=1234&limit=50"
 
-# Get packet drop events with command filter
-curl "http://localhost:8080/api/events?type=packet_drop&command=curl"
+# Kubernetes: Get events from specific node
+curl "http://localhost:8080/api/events?k8s_node_name=worker-1"
 ```
 
 ### Query Parameters
@@ -383,11 +165,11 @@ curl "http://localhost:8080/api/events?type=packet_drop&command=curl"
 - `type`: Event type filter (e.g., "connection", "packet_drop")
 - `pid`: Process ID filter
 - `command`: Command name filter
-- `since`: RFC3339 timestamp for start time
-- `until`: RFC3339 timestamp for end time
+- `k8s_node_name`, `k8s_pod_name`, `k8s_namespace`: Kubernetes filters
+- `since`, `until`: RFC3339 timestamp filters
 - `limit`: Maximum results (default: 100)
 
-## Development
+## 🛠️ Development
 
 ```bash
 # Development build with debug logging
@@ -403,34 +185,37 @@ make test
 make build-bpf
 ```
 
-## Project Structure
+**📚 [Complete Development Guide](docs/program-development.md)** - Detailed guide for creating new eBPF monitoring programs
+
+## 📁 Project Structure
 
 ```
-├── cmd/server/           # Main application entry point
+├── cmd/                 # Application entry points
+│   ├── server/         # eBPF monitoring server
+│   └── aggregator/     # Kubernetes aggregator
 ├── internal/
-│   ├── core/            # Core interfaces and types
-│   ├── events/          # Event system (BaseEvent, streams)
-│   ├── programs/        # eBPF program implementations
-│   │   ├── base.go      # BaseProgram foundation
-│   │   ├── manager.go   # Program manager
-│   │   ├── connection/  # Network connection monitoring
-│   │   └── packet_drop/ # Packet drop monitoring
-│   ├── storage/         # Event storage and querying
-│   ├── api/            # HTTP API handlers
-│   └── system/         # System initialization and coordination
-├── bpf/                # eBPF C programs and headers
-├── docs/               # Documentation and API specs
-└── pkg/logger/         # Logging utilities
+│   ├── core/          # Core interfaces and types
+│   ├── events/        # Event system (BaseEvent, streams)
+│   ├── programs/      # eBPF program implementations
+│   ├── storage/       # Event storage and querying
+│   ├── api/          # HTTP API handlers
+│   ├── kubernetes/   # Kubernetes metadata integration
+│   └── system/       # System initialization
+├── bpf/              # eBPF C programs and headers
+├── kubernetes/       # Kubernetes manifests
+├── scripts/          # Deployment and testing scripts
+└── docs/            # Documentation and API specs
 ```
 
-## Requirements
+## 🔧 Requirements
 
 - **Linux kernel 4.18+** with eBPF support
-- **Root privileges** for eBPF program loading
+- **Root privileges** for eBPF program loading  
 - **Dependencies**: Go 1.23+, Clang, libbpf-dev, kernel headers
+- **Kubernetes**: 1.20+ (for K8s deployment)
 
-For detailed setup: [docs/setup.md](docs/setup.md) | Development guide: [docs/program-development.md](docs/program-development.md)
+**📖 Setup Guide**: [docs/setup.md](docs/setup.md)
 
-## License
+## 📄 License
 
 MIT License - see [LICENSE](LICENSE) file.
