@@ -92,13 +92,13 @@ build-server: generate
 
 # Build the aggregator binary
 .PHONY: build-aggregator
-build-aggregator: generate
+build-aggregator: generate docs-aggregator
 	@echo "Building $(AGGREGATOR_NAME)..."
 	go build -o bin/$(AGGREGATOR_NAME) ./cmd/aggregator
 
 # Build the aggregator binary without eBPF dependencies (for Docker)
 .PHONY: build-aggregator-only
-build-aggregator-only:
+build-aggregator-only: docs-aggregator
 	@echo "Building $(AGGREGATOR_NAME) (no eBPF dependencies)..."
 	go build -o bin/$(AGGREGATOR_NAME) ./cmd/aggregator
 
@@ -218,6 +218,18 @@ docs:
 	@echo "API documentation generated at docs/swagger/"
 	@echo "Interactive docs: http://localhost:8080/docs/ (when server is running)"
 	@echo "External docs: https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger.json"
+
+# Generate aggregator API documentation using Swagger
+.PHONY: docs-aggregator
+docs-aggregator:
+	@command -v $(shell go env GOPATH)/bin/swag >/dev/null 2>&1 || { echo "Installing swag..."; go install github.com/swaggo/swag/cmd/swag@latest; }
+	$(shell go env GOPATH)/bin/swag init -g internal/aggregator/aggregator.go -o docs/swagger-aggregator --parseDependency --parseInternal
+	@echo "Aggregator API documentation generated at docs/swagger-aggregator/"
+	@echo "Interactive docs: http://localhost:8081/swagger/ (when aggregator is running)"
+
+# Generate all documentation
+.PHONY: docs-all
+docs-all: docs docs-aggregator
 
 # Install the binary system-wide
 .PHONY: install

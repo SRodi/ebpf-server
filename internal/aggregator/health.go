@@ -15,6 +15,16 @@ type HealthCheck struct {
 }
 
 // HandleHealth handles health check requests.
+//
+//	@Summary		Health check
+//	@Description	Get the health status and basic statistics of the aggregator
+//	@Tags			health
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	HealthCheck	"Health status"
+//	@Failure		405	{string}	string		"Method not allowed"
+//	@Failure		503	{object}	HealthCheck	"Service unavailable"
+//	@Router			/health [get]
 func (a *Aggregator) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

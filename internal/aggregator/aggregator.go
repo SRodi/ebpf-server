@@ -1,4 +1,15 @@
 // Package aggregator provides event aggregation functionality for eBPF monitoring.
+//
+//	@title			eBPF Event Aggregator API
+//	@description	HTTP API for aggregating and querying eBPF events from multiple agents
+//	@version		1.0.0
+//	@host			localhost:8081
+//	@BasePath		/
+//	@contact.name	API Support
+//	@contact.url	https://github.com/srodi/ebpf-server/issues
+//	@contact.email	support@example.com
+//	@license.name	MIT
+//	@license.url	https://github.com/srodi/ebpf-server/blob/main/LICENSE
 package aggregator
 
 import (
@@ -94,6 +105,21 @@ func (a *Aggregator) IsRunning() bool {
 }
 
 // HandleEvents handles HTTP requests for querying aggregated events.
+//
+//	@Summary		Query aggregated events
+//	@Description	Retrieve aggregated events with optional filtering by type, node, and time range
+//	@Tags			events
+//	@Accept			json
+//	@Produce		json
+//	@Param			type		query		string	false	"Event type filter"
+//	@Param			node		query		string	false	"Node name filter"
+//	@Param			since		query		string	false	"Start time (RFC3339 format)"
+//	@Param			until		query		string	false	"End time (RFC3339 format)"
+//	@Param			limit		query		int		false	"Maximum number of events to return"
+//	@Success		200			{object}	map[string]interface{}	"Events and count"
+//	@Failure		405			{string}	string					"Method not allowed"
+//	@Failure		500			{string}	string					"Internal server error"
+//	@Router			/api/events [get]
 func (a *Aggregator) HandleEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -122,6 +148,18 @@ func (a *Aggregator) HandleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleIngest handles HTTP requests for ingesting events from agents.
+//
+//	@Summary		Ingest events from agents
+//	@Description	Accept events from eBPF agents for aggregation and storage
+//	@Tags			events
+//	@Accept			json
+//	@Produce		json
+//	@Param			events	body		object	true	"Events to ingest"
+//	@Success		200		{object}	map[string]interface{}	"Ingestion result"
+//	@Failure		400		{string}	string					"Bad request"
+//	@Failure		405		{string}	string					"Method not allowed"
+//	@Failure		500		{string}	string					"Internal server error"
+//	@Router			/api/events/ingest [post]
 func (a *Aggregator) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -161,6 +199,15 @@ func (a *Aggregator) HandleIngest(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleStats handles HTTP requests for aggregation statistics.
+//
+//	@Summary		Get aggregation statistics
+//	@Description	Retrieve statistics about event aggregation including counts by type and node
+//	@Tags			stats
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	map[string]interface{}	"Aggregation statistics"
+//	@Failure		405	{string}	string					"Method not allowed"
+//	@Router			/api/stats [get]
 func (a *Aggregator) HandleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

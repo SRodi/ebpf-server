@@ -12,7 +12,7 @@ import (
 	"github.com/srodi/ebpf-server/internal/aggregator"
 	"github.com/srodi/ebpf-server/pkg/logger"
 
-	_ "github.com/srodi/ebpf-server/docs/swagger" // Import generated docs
+	_ "github.com/srodi/ebpf-server/docs/swagger-aggregator" // Import generated aggregator docs
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
