@@ -104,64 +104,6 @@ func (a *Aggregator) IsRunning() bool {
 	return a.running
 }
 
-// HandleHealth responds with aggregator health information.
-//
-//	@Summary		Health check
-//	@Description	Get the health status of the eBPF event aggregator
-//	@Tags			health
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Health status"
-//	@Failure		503	{object}	map[string]string		"Service unavailable"
-//	@Router			/health [get]
-func (a *Aggregator) HandleHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	a.mu.RLock()
-	running := a.running
-	a.mu.RUnlock()
-
-	if !running {
-		http.Error(w, "Aggregator not running", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Get current stats
-	a.stats.mu.RLock()
-	totalEvents := a.stats.TotalEvents
-	eventsByType := make(map[string]int64)
-	for k, v := range a.stats.EventsByType {
-		eventsByType[k] = v
-	}
-	eventsByNode := make(map[string]int64)
-	for k, v := range a.stats.EventsByNode {
-		eventsByNode[k] = v
-	}
-	lastEventTime := a.stats.LastEventTime
-	startTime := a.stats.StartTime
-	a.stats.mu.RUnlock()
-
-	health := map[string]interface{}{
-		"status":          "healthy",
-		"running":         running,
-		"uptime":          time.Since(startTime).String(),
-		"total_events":    totalEvents,
-		"events_by_type":  eventsByType,
-		"events_by_node":  eventsByNode,
-		"last_event_time": lastEventTime,
-		"timestamp":       time.Now().Format(time.RFC3339),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(health); err != nil {
-		logger.Errorf("Failed to encode health response: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-	}
-}
-
 // HandleEvents handles HTTP requests for querying aggregated events.
 //
 //	@Summary		Query aggregated events
