@@ -39,6 +39,8 @@ make kind-deploy           # Deploy to kind cluster
 make kind-integration-test # Run comprehensive tests
 ```
 
+To get detailed API documentation for the aggregator, available only in Kubernetes mode [see API Aggregator Documentation](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/srodi/ebpf-server/main/docs/swagger-aggregator/swagger.json)
+
 ### VM Deployment (Traditional)
 
 For single-server deployments:
