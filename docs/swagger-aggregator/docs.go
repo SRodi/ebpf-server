@@ -11,6 +11,7 @@ const docTemplate = `{
         "title": "{{.Title}}",
         "contact": {
             "name": "API Support",
+            "url": "https://github.com/srodi/ebpf-server/issues",
             "email": "support@example.com"
         },
         "license": {
@@ -38,19 +39,19 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Process ID (GET only)",
+                        "description": "Process ID",
                         "name": "pid",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Command name (GET only)",
+                        "description": "Command name",
                         "name": "command",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Duration in seconds (GET only, default: 60)",
+                        "description": "Duration in seconds (default: 60)",
                         "name": "duration_seconds",
                         "in": "query"
                     },
@@ -114,19 +115,19 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Process ID (GET only)",
+                        "description": "Process ID",
                         "name": "pid",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Command name (GET only)",
+                        "description": "Command name",
                         "name": "command",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Duration in seconds (GET only, default: 60)",
+                        "description": "Duration in seconds (default: 60)",
                         "name": "duration_seconds",
                         "in": "query"
                     },
@@ -283,8 +284,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Ingestion result",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_aggregator.IngestResponse"
                         }
                     },
                     "400": {
@@ -406,19 +406,19 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Process ID (GET only)",
+                        "description": "Process ID",
                         "name": "pid",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Command name (GET only)",
+                        "description": "Command name",
                         "name": "command",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Duration in seconds (GET only, default: 60)",
+                        "description": "Duration in seconds (default: 60)",
                         "name": "duration_seconds",
                         "in": "query"
                     },
@@ -482,19 +482,19 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Process ID (GET only)",
+                        "description": "Process ID",
                         "name": "pid",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Command name (GET only)",
+                        "description": "Command name",
                         "name": "command",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Duration in seconds (GET only, default: 60)",
+                        "description": "Duration in seconds (default: 60)",
                         "name": "duration_seconds",
                         "in": "query"
                     },
@@ -602,8 +602,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Aggregation statistics",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_aggregator.AggregationStatsResponse"
                         }
                     },
                     "405": {
@@ -945,6 +944,263 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_aggregator.AgentInfo": {
+            "type": "object",
+            "properties": {
+                "event_count": {
+                    "description": "Number of events from this agent",
+                    "type": "integer",
+                    "example": 2500
+                },
+                "last_seen": {
+                    "description": "Last seen timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "node_name": {
+                    "description": "Node name",
+                    "type": "string",
+                    "example": "worker-1"
+                },
+                "programs": {
+                    "description": "Programs running on this agent",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_aggregator.ProgramInfo"
+                    }
+                },
+                "status": {
+                    "description": "Agent status",
+                    "type": "string",
+                    "example": "active"
+                }
+            }
+        },
+        "internal_aggregator.AggregatedEventFilters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "description": "Limit filter",
+                    "type": "integer",
+                    "example": 100
+                },
+                "node": {
+                    "description": "Node name filter",
+                    "type": "string",
+                    "example": "worker-1"
+                },
+                "since": {
+                    "description": "Start time filter",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "type": {
+                    "description": "Event type filter",
+                    "type": "string",
+                    "example": "connection"
+                },
+                "until": {
+                    "description": "End time filter",
+                    "type": "string",
+                    "example": "2023-01-01T13:00:00Z"
+                }
+            }
+        },
+        "internal_aggregator.AggregatedEventsResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "Number of events returned",
+                    "type": "integer",
+                    "example": 50
+                },
+                "events": {
+                    "description": "List of aggregated events",
+                    "type": "array",
+                    "items": {}
+                },
+                "filters": {
+                    "description": "Applied filters",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_aggregator.AggregatedEventFilters"
+                        }
+                    ]
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_count": {
+                    "description": "Total number of matching events",
+                    "type": "integer",
+                    "example": 1250
+                }
+            }
+        },
+        "internal_aggregator.AggregatedListResponse": {
+            "type": "object",
+            "properties": {
+                "events_by_node": {
+                    "description": "Event count by node",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "events_by_pid": {
+                    "description": "Events grouped by PID",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {}
+                    }
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_events": {
+                    "description": "Total number of events",
+                    "type": "integer",
+                    "example": 45
+                },
+                "total_nodes": {
+                    "description": "Number of nodes with events",
+                    "type": "integer",
+                    "example": 3
+                },
+                "total_pids": {
+                    "description": "Number of unique PIDs across all nodes",
+                    "type": "integer",
+                    "example": 8
+                }
+            }
+        },
+        "internal_aggregator.AggregatedSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "description": "Command name (if filtered)",
+                    "type": "string",
+                    "example": "curl"
+                },
+                "count": {
+                    "description": "Total count across all nodes",
+                    "type": "integer",
+                    "example": 15
+                },
+                "count_by_node": {
+                    "description": "Count by node",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "duration_seconds": {
+                    "description": "Duration in seconds",
+                    "type": "integer",
+                    "example": 60
+                },
+                "pid": {
+                    "description": "Process ID (if filtered)",
+                    "type": "integer",
+                    "example": 1234
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_nodes": {
+                    "description": "Number of nodes with events",
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "internal_aggregator.AggregationStatsResponse": {
+            "type": "object",
+            "properties": {
+                "aggregation_start": {
+                    "description": "When aggregation started",
+                    "type": "string",
+                    "example": "2023-01-01T10:00:00Z"
+                },
+                "connected_agents": {
+                    "description": "Number of connected agents",
+                    "type": "integer",
+                    "example": 5
+                },
+                "events_by_node": {
+                    "description": "Events grouped by node",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "events_by_type": {
+                    "description": "Events grouped by type",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "last_event_time": {
+                    "description": "Timestamp of last event",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_events": {
+                    "description": "Total events stored",
+                    "type": "integer",
+                    "example": 12500
+                }
+            }
+        },
+        "internal_aggregator.AggregatorProgramsResponse": {
+            "type": "object",
+            "properties": {
+                "all_programs": {
+                    "description": "All programs across agents",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_aggregator.ProgramInfo"
+                    }
+                },
+                "connected_agents": {
+                    "description": "List of connected agents",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_aggregator.AgentInfo"
+                    }
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_agents": {
+                    "description": "Total number of agents",
+                    "type": "integer",
+                    "example": 3
+                },
+                "total_programs": {
+                    "description": "Total number of programs",
+                    "type": "integer",
+                    "example": 6
+                }
+            }
+        },
         "internal_aggregator.HealthCheck": {
             "type": "object",
             "properties": {
@@ -962,6 +1218,61 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "internal_aggregator.IngestResponse": {
+            "type": "object",
+            "properties": {
+                "events_processed": {
+                    "description": "Number of events processed",
+                    "type": "integer",
+                    "example": 25
+                },
+                "message": {
+                    "description": "Status message",
+                    "type": "string",
+                    "example": "Events ingested successfully"
+                },
+                "success": {
+                    "description": "Ingestion success status",
+                    "type": "boolean",
+                    "example": true
+                },
+                "timestamp": {
+                    "description": "Processing timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                }
+            }
+        },
+        "internal_aggregator.ProgramInfo": {
+            "type": "object",
+            "properties": {
+                "event_count": {
+                    "description": "Events generated by this program",
+                    "type": "integer",
+                    "example": 1250
+                },
+                "name": {
+                    "description": "Program name",
+                    "type": "string",
+                    "example": "connection_tracer"
+                },
+                "node": {
+                    "description": "Node where program is running",
+                    "type": "string",
+                    "example": "worker-1"
+                },
+                "status": {
+                    "description": "Program status",
+                    "type": "string",
+                    "example": "active"
+                },
+                "type": {
+                    "description": "Program type",
+                    "type": "string",
+                    "example": "kprobe"
+                }
+            }
         }
     }
 }`
@@ -973,7 +1284,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "eBPF Event Aggregator API",
-	Description:      "HTTP API for aggregating and querying eBPF events from multiple //\t@Success\t\t200\t\t\t{object}\tAggregatedE//\t@Success\t\t200\t\t{object}\tIngestResponse\t\t\t\t\"Ingest//\t@Success\t\t200\t{object}\tAggrega//\t@Success\t\t200\t{object}\tAggregatorProgramsResponse\t\"Program information\"ionStatsResponse\t\"Aggregation statistics\"on result\"entsResponse\t\"Events and count\"gents",
+	Description:      "HTTP API for aggregating and querying eBPF events from multiple agents",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

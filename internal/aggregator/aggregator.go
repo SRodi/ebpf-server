@@ -1,12 +1,12 @@
 // Package aggregator provides event aggregation functionality for eBPF monitoring.
 //
 //	@title			eBPF Event Aggregator API
-//	@description	HTTP API for aggregating and querying eBPF events from multiple //	@Success		200			{object}	AggregatedE//	@Success		200		{object}	IngestResponse				"Ingest//	@Success		200	{object}	Aggrega//	@Success		200	{object}	AggregatorProgramsResponse	"Program information"ionStatsResponse	"Aggregation statistics"on result"entsResponse	"Events and count"gents
+//	@description	HTTP API for aggregating and querying eBPF events from multiple agents
 //	@version		1.0.0
 //	@host			localhost:8081
 //	@BasePath		/
 //	@contact.name	API Support
-//	@contact.url//	@Success		200	{object}	AggregatedListResponse		"//	@Success		200	{object}	AggregatedListResponse		"Pack//	@Success		200				{object}	AggregatedSummaryResponse	"Connection statistics"t//	@Success		200				{object}	AggregatedSummaryResponse	"Packet drop statistics"drop events"onnection events"https://github.com/srodi/ebpf-server/issues
+//	@contact.url	https://github.com/srodi/ebpf-server/issues
 //	@contact.email	support@example.com
 //	@license.name	MIT
 //	@license.url	https://github.com/srodi/ebpf-server/blob/main/LICENSE
@@ -203,7 +203,7 @@ func (a *Aggregator) IsRunning() bool {
 //	@Param			since		query		string	false	"Start time (RFC3339 format)"
 //	@Param			until		query		string	false	"End time (RFC3339 format)"
 //	@Param			limit		query		int		false	"Maximum number of events to return"
-//	@Success		200			{object}	map[string]interface{}	"Events and count"
+//	@Success		200			{object}	AggregatedEventsResponse	"Events and count"
 //	@Failure		405			{string}	string					"Method not allowed"
 //	@Failure		500			{string}	string					"Internal server error"
 //	@Router			/api/events [get]
@@ -242,7 +242,7 @@ func (a *Aggregator) HandleEvents(w http.ResponseWriter, r *http.Request) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			events	body		object	true	"Events to ingest"
-//	@Success		200		{object}	map[string]interface{}	"Ingestion result"
+//	@Success		200		{object}	IngestResponse	"Ingestion result"
 //	@Failure		400		{string}	string					"Bad request"
 //	@Failure		405		{string}	string					"Method not allowed"
 //	@Failure		500		{string}	string					"Internal server error"
@@ -294,7 +294,7 @@ func (a *Aggregator) HandleIngest(w http.ResponseWriter, r *http.Request) {
 //	@Tags			stats
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Aggregation statistics"
+//	@Success		200	{object}	AggregationStatsResponse	"Aggregation statistics"
 //	@Failure		405	{string}	string					"Method not allowed"
 //	@Router			/api/stats [get]
 func (a *Aggregator) HandleStats(w http.ResponseWriter, r *http.Request) {
@@ -327,7 +327,7 @@ func (a *Aggregator) HandleStats(w http.ResponseWriter, r *http.Request) {
 //	@Tags			programs
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Program information"
+//	@Success		200	{object}	AggregatorProgramsResponse	"Program information"
 //	@Failure		405	{string}	string					"Method not allowed"
 //	@Router			/api/programs [get]
 func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
@@ -594,7 +594,7 @@ func (a *Aggregator) GetPrograms() []core.ProgramStatus {
 //	@Tags			connections
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Connection events"
+//	@Success		200	{object}	AggregatedListResponse	"Connection events"
 //	@Failure		500	{object}	map[string]string		"Internal server error"
 //	@Failure		503	{object}	map[string]string		"Service unavailable"
 //	@Router			/api/list-connections [get]
@@ -645,7 +645,7 @@ func (a *Aggregator) HandleListConnections(w http.ResponseWriter, r *http.Reques
 //	@Tags			packet_drops
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Packet drop events"
+//	@Success		200	{object}	AggregatedListResponse	"Packet drop events"
 //	@Failure		500	{object}	map[string]string		"Internal server error"
 //	@Failure		503	{object}	map[string]string		"Service unavailable"
 //	@Router			/api/list-packet-drops [get]
@@ -696,11 +696,11 @@ func (a *Aggregator) HandleListPacketDrops(w http.ResponseWriter, r *http.Reques
 //	@Tags			connections
 //	@Accept			json
 //	@Produce		json
-//	@Param			pid				query		int		false	"Process ID (GET only)"
-//	@Param			command			query		string	false	"Command name (GET only)"
-//	@Param			duration_seconds	query	int		false	"Duration in seconds (GET only, default: 60)"
+//	@Param			pid				query		int		false	"Process ID"
+//	@Param			command			query		string	false	"Command name"
+//	@Param			duration_seconds	query	int		false	"Duration in seconds (default: 60)"
 //	@Param			request			body		map[string]interface{}	false	"Connection summary request (POST only)"
-//	@Success		200				{object}	map[string]interface{}	"Connection statistics"
+//	@Success		200				{object}	AggregatedSummaryResponse	"Connection statistics"
 //	@Failure		400				{object}	map[string]string		"Bad request"
 //	@Failure		500				{object}	map[string]string		"Internal server error"
 //	@Router			/api/connection-summary [get]
@@ -775,11 +775,11 @@ func (a *Aggregator) HandleConnectionSummary(w http.ResponseWriter, r *http.Requ
 //	@Tags			packet_drops
 //	@Accept			json
 //	@Produce		json
-//	@Param			pid				query		int		false	"Process ID (GET only)"
-//	@Param			command			query		string	false	"Command name (GET only)"
-//	@Param			duration_seconds	query	int		false	"Duration in seconds (GET only, default: 60)"
+//	@Param			pid				query		int		false	"Process ID"
+//	@Param			command			query		string	false	"Command name"
+//	@Param			duration_seconds	query	int		false	"Duration in seconds (default: 60)"
 //	@Param			request			body		map[string]interface{}	false	"Packet drop summary request (POST only)"
-//	@Success		200				{object}	map[string]interface{}	"Packet drop statistics"
+//	@Success		200				{object}	AggregatedSummaryResponse	"Packet drop statistics"
 //	@Failure		400				{object}	map[string]string		"Bad request"
 //	@Failure		500				{object}	map[string]string		"Internal server error"
 //	@Router			/api/packet-drop-summary [get]

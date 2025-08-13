@@ -14,6 +14,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -49,7 +50,7 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	health := HealthResponse{
 		Status:    "healthy",
 		Component: "eBPF Monitor API",
@@ -63,17 +64,16 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-}// HandlePrograms returns the status of all eBPF programs.
-//
-//	@Summary		List eBPF programs
-//	@Description	Get the status and information of all loaded eBPF programs
-//	@Tags			programs
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	ProgramsResponse		"List of eBPF programs"
-//	@Failure		500	{object}	map[string]string		"Internal server error"
-//	@Failure		503	{object}	map[string]string		"Service unavailable"
-//	@Router			/api/programs [get]
+} // HandlePrograms returns the status of all eBPF programs.
+// @Summary		List eBPF programs
+// @Description	Get the status and information of all loaded eBPF programs
+// @Tags			programs
+// @Accept			json
+// @Produce		json
+// @Success		200	{object}	ProgramsResponse		"List of eBPF programs"
+// @Failure		500	{object}	map[string]string		"Internal server error"
+// @Failure		503	{object}	map[string]string		"Service unavailable"
+// @Router			/api/programs [get]
 func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	if globalSystem == nil {
 		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
@@ -94,11 +94,13 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 			status = "inactive"
 		}
 
+		// Use a hash of the program name as a unique ID
+		hash := sha256.Sum256([]byte(prog.Name))
 		programInfo := ProgramInfo{
 			Name:   prog.Name,
 			Type:   "eBPF", // Generic type, could be enhanced
 			Status: status,
-			ID:     int(prog.EventCount), // Use event count as an ID placeholder
+			ID:     int(hash[0]), // Use first byte of hash as ID
 		}
 		programList = append(programList, programInfo)
 	}
@@ -231,9 +233,9 @@ func HandleEvents(w http.ResponseWriter, r *http.Request) {
 //	@Tags			connections
 //	@Accept			json
 //	@Produce		json
-//	@Param			pid				query		int		false	"Process ID (GET only)"
-//	@Param			command			query		string	false	"Command name (GET only)"
-//	@Param			duration_seconds	query	int		false	"Duration in seconds (GET only, default: 60)"
+//	@Param			pid				query		int		false	"Process ID"
+//	@Param			command			query		string	false	"Command name"
+//	@Param			duration_seconds	query	int		false	"Duration in seconds (default: 60)"
 //	@Param			request			body		ConnectionSummaryRequest	false	"Connection summary request (POST only)"
 //	@Success		200				{object}	ConnectionSummaryResponse	"Connection statistics"
 //	@Failure		400				{object}	map[string]string			"Bad request"
@@ -317,9 +319,9 @@ func HandleConnectionSummary(w http.ResponseWriter, r *http.Request) {
 //	@Tags			packet_drops
 //	@Accept			json
 //	@Produce		json
-//	@Param			pid				query		int		false	"Process ID (GET only)"
-//	@Param			command			query		string	false	"Command name (GET only)"
-//	@Param			duration_seconds	query	int		false	"Duration in seconds (GET only, default: 60)"
+//	@Param			pid				query		int		false	"Process ID"
+//	@Param			command			query		string	false	"Command name"
+//	@Param			duration_seconds	query	int		false	"Duration in seconds (default: 60)"
 //	@Param			request			body		PacketDropSummaryRequest	false	"Packet drop summary request (POST only)"
 //	@Success		200				{object}	PacketDropSummaryResponse	"Packet drop statistics"
 //	@Failure		400				{object}	map[string]string			"Bad request"
