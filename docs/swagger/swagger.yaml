@@ -1,5 +1,17 @@
 basePath: /
 definitions:
+  aggregator.HealthCheck:
+    properties:
+      component:
+        type: string
+      stats:
+        additionalProperties: true
+        type: object
+      status:
+        type: string
+      uptime:
+        type: string
+    type: object
   internal_api.ConnectionListResponse:
     properties:
       events_by_pid:
@@ -57,6 +69,75 @@ definitions:
       query_time:
         description: Query timestamp
         example: "2023-01-01T12:00:00Z"
+        type: string
+    type: object
+  internal_api.EventFilters:
+    properties:
+      command:
+        description: Command filter
+        example: curl
+        type: string
+      limit:
+        description: Limit filter
+        example: 100
+        type: integer
+      pid:
+        description: Process ID filter
+        example: 1234
+        type: integer
+      since:
+        description: Start time filter
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      type:
+        description: Event type filter
+        example: connection
+        type: string
+      until:
+        description: End time filter
+        example: "2023-01-01T13:00:00Z"
+        type: string
+    type: object
+  internal_api.EventsResponse:
+    properties:
+      count:
+        description: Number of events returned
+        example: 25
+        type: integer
+      events:
+        description: List of events
+        items: {}
+        type: array
+      filters:
+        allOf:
+        - $ref: '#/definitions/internal_api.EventFilters'
+        description: Applied filters
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_count:
+        description: Total number of matching events
+        example: 150
+        type: integer
+    type: object
+  internal_api.HealthResponse:
+    properties:
+      component:
+        description: Component name
+        example: eBPF Monitor API
+        type: string
+      status:
+        description: Service status
+        example: healthy
+        type: string
+      uptime:
+        description: Service uptime
+        example: 1h30m
+        type: string
+      version:
+        description: API version
+        example: 1.0.0
         type: string
     type: object
   internal_api.PacketDropListResponse:
@@ -117,6 +198,41 @@ definitions:
         description: Query timestamp
         example: "2023-01-01T12:00:00Z"
         type: string
+    type: object
+  internal_api.ProgramInfo:
+    properties:
+      id:
+        description: Program ID
+        example: 123
+        type: integer
+      name:
+        description: Program name
+        example: connection_tracer
+        type: string
+      status:
+        description: Program status
+        example: loaded
+        type: string
+      type:
+        description: Program type
+        example: kprobe
+        type: string
+    type: object
+  internal_api.ProgramsResponse:
+    properties:
+      programs:
+        description: List of eBPF programs
+        items:
+          $ref: '#/definitions/internal_api.ProgramInfo'
+        type: array
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_count:
+        description: Total number of programs
+        example: 2
+        type: integer
     type: object
 host: localhost:8080
 info:
@@ -270,8 +386,7 @@ paths:
         "200":
           description: Filtered events
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.EventsResponse'
         "500":
           description: Internal server error
           schema:
@@ -285,6 +400,41 @@ paths:
               type: string
             type: object
       summary: Query events
+      tags:
+      - events
+  /api/events/ingest:
+    post:
+      consumes:
+      - application/json
+      description: Accept events from eBPF agents for aggregation and storage
+      parameters:
+      - description: Events to ingest
+        in: body
+        name: events
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ingestion result
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "405":
+          description: Method not allowed
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Ingest events from agents
       tags:
       - events
   /api/list-connections:
@@ -455,8 +605,7 @@ paths:
         "200":
           description: List of eBPF programs
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.ProgramsResponse'
         "500":
           description: Internal server error
           schema:
@@ -472,6 +621,27 @@ paths:
       summary: List eBPF programs
       tags:
       - programs
+  /api/stats:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve statistics about event aggregation including counts by
+        type and node
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Aggregation statistics
+          schema:
+            additionalProperties: true
+            type: object
+        "405":
+          description: Method not allowed
+          schema:
+            type: string
+      summary: Get aggregation statistics
+      tags:
+      - stats
   /health:
     get:
       consumes:
@@ -483,8 +653,7 @@ paths:
         "200":
           description: Health status
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.HealthResponse'
         "503":
           description: Service unavailable
           schema:

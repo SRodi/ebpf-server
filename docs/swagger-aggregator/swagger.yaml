@@ -59,6 +59,75 @@ definitions:
         example: "2023-01-01T12:00:00Z"
         type: string
     type: object
+  api.EventFilters:
+    properties:
+      command:
+        description: Command filter
+        example: curl
+        type: string
+      limit:
+        description: Limit filter
+        example: 100
+        type: integer
+      pid:
+        description: Process ID filter
+        example: 1234
+        type: integer
+      since:
+        description: Start time filter
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      type:
+        description: Event type filter
+        example: connection
+        type: string
+      until:
+        description: End time filter
+        example: "2023-01-01T13:00:00Z"
+        type: string
+    type: object
+  api.EventsResponse:
+    properties:
+      count:
+        description: Number of events returned
+        example: 25
+        type: integer
+      events:
+        description: List of events
+        items: {}
+        type: array
+      filters:
+        allOf:
+        - $ref: '#/definitions/api.EventFilters'
+        description: Applied filters
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_count:
+        description: Total number of matching events
+        example: 150
+        type: integer
+    type: object
+  api.HealthResponse:
+    properties:
+      component:
+        description: Component name
+        example: eBPF Monitor API
+        type: string
+      status:
+        description: Service status
+        example: healthy
+        type: string
+      uptime:
+        description: Service uptime
+        example: 1h30m
+        type: string
+      version:
+        description: API version
+        example: 1.0.0
+        type: string
+    type: object
   api.PacketDropListResponse:
     properties:
       events_by_pid:
@@ -118,6 +187,41 @@ definitions:
         example: "2023-01-01T12:00:00Z"
         type: string
     type: object
+  api.ProgramInfo:
+    properties:
+      id:
+        description: Program ID
+        example: 123
+        type: integer
+      name:
+        description: Program name
+        example: connection_tracer
+        type: string
+      status:
+        description: Program status
+        example: loaded
+        type: string
+      type:
+        description: Program type
+        example: kprobe
+        type: string
+    type: object
+  api.ProgramsResponse:
+    properties:
+      programs:
+        description: List of eBPF programs
+        items:
+          $ref: '#/definitions/api.ProgramInfo'
+        type: array
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_count:
+        description: Total number of programs
+        example: 2
+        type: integer
+    type: object
   internal_aggregator.HealthCheck:
     properties:
       component:
@@ -135,8 +239,9 @@ info:
   contact:
     email: support@example.com
     name: API Support
-    url: https://github.com/srodi/ebpf-server/issues
-  description: HTTP API for aggregating and querying eBPF events from multiple agents
+  description: "HTTP API for aggregating and querying eBPF events from multiple //\t@Success\t\t200\t\t\t{object}\tAggregatedE//\t@Success\t\t200\t\t{object}\tIngestResponse\t\t\t\t\"Ingest//\t@Success\t\t200\t{object}\tAggrega//\t@Success\t\t200\t{object}\tAggregatorProgramsResponse\t\"Program
+    information\"ionStatsResponse\t\"Aggregation statistics\"on result\"entsResponse\t\"Events
+    and count\"gents"
   license:
     name: MIT
     url: https://github.com/srodi/ebpf-server/blob/main/LICENSE
@@ -282,8 +387,7 @@ paths:
         "200":
           description: Filtered events
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/api.EventsResponse'
         "500":
           description: Internal server error
           schema:
@@ -502,8 +606,7 @@ paths:
         "200":
           description: List of eBPF programs
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/api.ProgramsResponse'
         "500":
           description: Internal server error
           schema:
@@ -551,8 +654,7 @@ paths:
         "200":
           description: Health status
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/api.HealthResponse'
         "503":
           description: Service unavailable
           schema:

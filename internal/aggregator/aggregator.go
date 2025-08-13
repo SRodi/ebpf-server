@@ -1,12 +1,12 @@
 // Package aggregator provides event aggregation functionality for eBPF monitoring.
 //
 //	@title			eBPF Event Aggregator API
-//	@description	HTTP API for aggregating and querying eBPF events from multiple agents
+//	@description	HTTP API for aggregating and querying eBPF events from multiple //	@Success		200			{object}	AggregatedE//	@Success		200		{object}	IngestResponse				"Ingest//	@Success		200	{object}	Aggrega//	@Success		200	{object}	AggregatorProgramsResponse	"Program information"ionStatsResponse	"Aggregation statistics"on result"entsResponse	"Events and count"gents
 //	@version		1.0.0
 //	@host			localhost:8081
 //	@BasePath		/
 //	@contact.name	API Support
-//	@contact.url	https://github.com/srodi/ebpf-server/issues
+//	@contact.url//	@Success		200	{object}	AggregatedListResponse		"//	@Success		200	{object}	AggregatedListResponse		"Pack//	@Success		200				{object}	AggregatedSummaryResponse	"Connection statistics"t//	@Success		200				{object}	AggregatedSummaryResponse	"Packet drop statistics"drop events"onnection events"https://github.com/srodi/ebpf-server/issues
 //	@contact.email	support@example.com
 //	@license.name	MIT
 //	@license.url	https://github.com/srodi/ebpf-server/blob/main/LICENSE
@@ -25,6 +25,93 @@ import (
 	"github.com/srodi/ebpf-server/internal/storage"
 	"github.com/srodi/ebpf-server/pkg/logger"
 )
+
+// Response types for aggregator API endpoints
+
+// AggregatedEventsResponse represents the response for querying aggregated events
+type AggregatedEventsResponse struct {
+	Events     []core.Event `json:"events"`                                     // List of aggregated events
+	Count      int          `json:"count" example:"50"`                         // Number of events returned
+	TotalCount int          `json:"total_count" example:"1250"`                 // Total number of matching events
+	QueryTime  string       `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	Filters    AggregatedEventFilters `json:"filters"`                          // Applied filters
+}
+
+// AggregatedEventFilters represents the filters applied to aggregated event queries
+type AggregatedEventFilters struct {
+	Type  string `json:"type,omitempty" example:"connection"`            // Event type filter
+	Node  string `json:"node,omitempty" example:"worker-1"`              // Node name filter
+	Since string `json:"since,omitempty" example:"2023-01-01T12:00:00Z"` // Start time filter
+	Until string `json:"until,omitempty" example:"2023-01-01T13:00:00Z"` // End time filter
+	Limit int    `json:"limit,omitempty" example:"100"`                  // Limit filter
+}
+
+// IngestResponse represents the response for event ingestion
+type IngestResponse struct {
+	EventsProcessed int    `json:"events_processed" example:"25"`              // Number of events processed
+	Success         bool   `json:"success" example:"true"`                     // Ingestion success status
+	Message         string `json:"message" example:"Events ingested successfully"` // Status message
+	Timestamp       string `json:"timestamp" example:"2023-01-01T12:00:00Z"`   // Processing timestamp
+}
+
+// AggregationStatsResponse represents the response for aggregation statistics
+type AggregationStatsResponse struct {
+	TotalEvents      int64             `json:"total_events" example:"12500"`                  // Total events stored
+	EventsByType     map[string]int64  `json:"events_by_type"`                                 // Events grouped by type
+	EventsByNode     map[string]int64  `json:"events_by_node"`                                 // Events grouped by node
+	ConnectedAgents  int               `json:"connected_agents" example:"5"`                   // Number of connected agents
+	LastEventTime    string            `json:"last_event_time" example:"2023-01-01T12:00:00Z"` // Timestamp of last event
+	AggregationStart string            `json:"aggregation_start" example:"2023-01-01T10:00:00Z"` // When aggregation started
+	QueryTime        string            `json:"query_time" example:"2023-01-01T12:00:00Z"`     // Query timestamp
+}
+
+// AggregatorProgramsResponse represents the response for aggregator programs information
+type AggregatorProgramsResponse struct {
+	ConnectedAgents []AgentInfo   `json:"connected_agents"`                           // List of connected agents
+	AllPrograms     []ProgramInfo `json:"all_programs"`                               // All programs across agents
+	TotalAgents     int           `json:"total_agents" example:"3"`                   // Total number of agents
+	TotalPrograms   int           `json:"total_programs" example:"6"`                 // Total number of programs
+	QueryTime       string        `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// AgentInfo represents information about a connected agent
+type AgentInfo struct {
+	NodeName    string        `json:"node_name" example:"worker-1"`                   // Node name
+	LastSeen    string        `json:"last_seen" example:"2023-01-01T12:00:00Z"`       // Last seen timestamp
+	EventCount  int64         `json:"event_count" example:"2500"`                     // Number of events from this agent
+	Programs    []ProgramInfo `json:"programs"`                                       // Programs running on this agent
+	Status      string        `json:"status" example:"active"`                        // Agent status
+}
+
+// ProgramInfo represents information about an eBPF program
+type ProgramInfo struct {
+	Name        string `json:"name" example:"connection_tracer"`        // Program name
+	Type        string `json:"type" example:"kprobe"`                   // Program type
+	Status      string `json:"status" example:"active"`                 // Program status
+	Node        string `json:"node" example:"worker-1"`                 // Node where program is running
+	EventCount  int64  `json:"event_count" example:"1250"`              // Events generated by this program
+}
+
+// AggregatedListResponse represents the response for listing aggregated connection/packet drop events
+type AggregatedListResponse struct {
+	TotalPIDs   int                     `json:"total_pids" example:"8"`                     // Number of unique PIDs across all nodes
+	TotalEvents int                     `json:"total_events" example:"45"`                  // Total number of events
+	TotalNodes  int                     `json:"total_nodes" example:"3"`                    // Number of nodes with events
+	EventsByPID map[uint32][]core.Event `json:"events_by_pid"`                              // Events grouped by PID
+	EventsByNode map[string]int         `json:"events_by_node"`                             // Event count by node
+	QueryTime   string                  `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// AggregatedSummaryResponse represents the response for aggregated connection/packet drop summaries
+type AggregatedSummaryResponse struct {
+	Count           int               `json:"count" example:"15"`                        // Total count across all nodes
+	CountByNode     map[string]int    `json:"count_by_node"`                             // Count by node
+	PID             uint32            `json:"pid,omitempty" example:"1234"`              // Process ID (if filtered)
+	Command         string            `json:"command,omitempty" example:"curl"`          // Command name (if filtered)
+	DurationSeconds int               `json:"duration_seconds" example:"60"`             // Duration in seconds
+	TotalNodes      int               `json:"total_nodes" example:"3"`                   // Number of nodes with events
+	QueryTime       string            `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
 
 // Config represents aggregator configuration.
 type Config struct {

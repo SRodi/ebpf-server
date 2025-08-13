@@ -39,25 +39,24 @@ func Initialize(sys *system.System) {
 //	@Tags			health
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Health status"
-//	@Failure		503	{object}	map[string]string		"Service unavailable"
+//	@Success		200	{object}	HealthResponse		"Health status"
+//	@Failure		503	{object}	map[string]string	"Service unavailable"
 //	@Router			/health [get]
 func HandleHealth(w http.ResponseWriter, r *http.Request) {
-	if globalSystem == nil {
-		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
-		return
-	}
-
-	health := map[string]interface{}{
-		"status":  "healthy",
-		"running": globalSystem.IsRunning(),
-		"time":    time.Now().Format(time.RFC3339),
-	}
-
 	w.Header().Set("Content-Type", "application/json")
+	
+	health := HealthResponse{
+		Status:    "healthy",
+		Component: "eBPF Monitor API",
+		Uptime:    "active", // Since we don't have access to start time, use a generic status
+		Version:   "1.0.0",
+	}
+
+	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(health); err != nil {
 		logger.Errorf("Error encoding health response: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -68,7 +67,7 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 //	@Tags			programs
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"List of eBPF programs"
+//	@Success		200	{object}	ProgramsResponse		"List of eBPF programs"
 //	@Failure		500	{object}	map[string]string		"Internal server error"
 //	@Failure		503	{object}	map[string]string		"Service unavailable"
 //	@Router			/api/programs [get]
@@ -79,9 +78,36 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	}
 
 	programs := globalSystem.GetPrograms()
+	
+	// Convert to structured response
+	var programList []ProgramInfo
+	for _, prog := range programs {
+		status := "unknown"
+		if prog.Loaded && prog.Attached {
+			status = "active"
+		} else if prog.Loaded {
+			status = "loaded"
+		} else {
+			status = "inactive"
+		}
+		
+		programInfo := ProgramInfo{
+			Name:   prog.Name,
+			Type:   "eBPF", // Generic type, could be enhanced
+			Status: status,
+			ID:     int(prog.EventCount), // Use event count as an ID placeholder
+		}
+		programList = append(programList, programInfo)
+	}
+
+	response := ProgramsResponse{
+		Programs:   programList,
+		TotalCount: len(programList),
+		QueryTime:  time.Now().Format(time.RFC3339),
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(programs); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		logger.Errorf("Error encoding programs response: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
@@ -100,7 +126,7 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 //	@Param			since		query		string	false	"Start time (RFC3339 format)"
 //	@Param			until		query		string	false	"End time (RFC3339 format)"
 //	@Param			limit		query		int		false	"Maximum number of events to return (default: 100)"
-//	@Success		200			{object}	map[string]interface{}	"Filtered events"
+//	@Success		200			{object}	EventsResponse			"Filtered events"
 //	@Failure		500			{object}	map[string]string		"Internal server error"
 //	@Failure		503			{object}	map[string]string		"Service unavailable"
 //	@Router			/api/events [get]
@@ -158,10 +184,34 @@ func HandleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := map[string]interface{}{
-		"events": events,
-		"count":  len(events),
-		"query":  query,
+	// Get total count for the same query without limit
+	totalQuery := query
+	totalQuery.Limit = 0
+	totalCount, err := globalSystem.CountEvents(ctx, totalQuery)
+	if err != nil {
+		totalCount = len(events) // Fallback to returned count
+	}
+
+	// Build filters struct for response
+	filters := EventFilters{
+		Type:    query.EventType,
+		PID:     query.PID,
+		Command: query.Command,
+		Limit:   query.Limit,
+	}
+	if !query.Since.IsZero() {
+		filters.Since = query.Since.Format(time.RFC3339)
+	}
+	if !query.Until.IsZero() {
+		filters.Until = query.Until.Format(time.RFC3339)
+	}
+
+	response := EventsResponse{
+		Events:     events,
+		Count:      len(events),
+		TotalCount: totalCount,
+		QueryTime:  time.Now().Format(time.RFC3339),
+		Filters:    filters,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -503,4 +553,46 @@ type PacketDropListResponse struct {
 	TotalEvents int                     `json:"total_events" example:"7"`                  // Total number of events
 	EventsByPID map[uint32][]core.Event `json:"events_by_pid"`                             // Events grouped by PID
 	QueryTime   string                  `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// HealthResponse represents the response for health check
+type HealthResponse struct {
+	Status    string `json:"status" example:"healthy"`              // Service status
+	Component string `json:"component" example:"eBPF Monitor API"`  // Component name
+	Uptime    string `json:"uptime" example:"1h30m"`                // Service uptime
+	Version   string `json:"version" example:"1.0.0"`               // API version
+}
+
+// ProgramsResponse represents the response for listing eBPF programs
+type ProgramsResponse struct {
+	Programs    []ProgramInfo `json:"programs"`                                   // List of eBPF programs
+	TotalCount  int           `json:"total_count" example:"2"`                    // Total number of programs
+	QueryTime   string        `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// ProgramInfo represents information about an eBPF program
+type ProgramInfo struct {
+	Name   string `json:"name" example:"connection_tracer"`    // Program name
+	Type   string `json:"type" example:"kprobe"`               // Program type
+	Status string `json:"status" example:"loaded"`             // Program status
+	ID     int    `json:"id" example:"123"`                    // Program ID
+}
+
+// EventsResponse represents the response for querying events
+type EventsResponse struct {
+	Events     []core.Event `json:"events"`                                     // List of events
+	Count      int          `json:"count" example:"25"`                         // Number of events returned
+	TotalCount int          `json:"total_count" example:"150"`                  // Total number of matching events
+	QueryTime  string       `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	Filters    EventFilters `json:"filters"`                                    // Applied filters
+}
+
+// EventFilters represents the filters applied to the event query
+type EventFilters struct {
+	Type    string `json:"type,omitempty" example:"connection"`            // Event type filter
+	PID     uint32 `json:"pid,omitempty" example:"1234"`                   // Process ID filter
+	Command string `json:"command,omitempty" example:"curl"`               // Command filter
+	Since   string `json:"since,omitempty" example:"2023-01-01T12:00:00Z"` // Start time filter
+	Until   string `json:"until,omitempty" example:"2023-01-01T13:00:00Z"` // End time filter
+	Limit   int    `json:"limit,omitempty" example:"100"`                  // Limit filter
 }

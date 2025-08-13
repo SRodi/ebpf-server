@@ -232,8 +232,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Filtered events",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.EventsResponse"
                         }
                     },
                     "500": {
@@ -252,6 +251,59 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events/ingest": {
+            "post": {
+                "description": "Accept events from eBPF agents for aggregation and storage",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Ingest events from agents",
+                "parameters": [
+                    {
+                        "description": "Events to ingest",
+                        "name": "events",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Ingestion result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -510,8 +562,7 @@ const docTemplate = `{
                     "200": {
                         "description": "List of eBPF programs",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.ProgramsResponse"
                         }
                     },
                     "500": {
@@ -535,6 +586,36 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/stats": {
+            "get": {
+                "description": "Retrieve statistics about event aggregation including counts by type and node",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stats"
+                ],
+                "summary": "Get aggregation statistics",
+                "responses": {
+                    "200": {
+                        "description": "Aggregation statistics",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "405": {
+                        "description": "Method not allowed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Get the health status of the eBPF monitoring system",
@@ -552,8 +633,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Health status",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.HealthResponse"
                         }
                     },
                     "503": {
@@ -570,6 +650,24 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "aggregator.HealthCheck": {
+            "type": "object",
+            "properties": {
+                "component": {
+                    "type": "string"
+                },
+                "stats": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string"
+                },
+                "uptime": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.ConnectionListResponse": {
             "type": "object",
             "properties": {
@@ -648,6 +746,99 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.EventFilters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "description": "Command filter",
+                    "type": "string",
+                    "example": "curl"
+                },
+                "limit": {
+                    "description": "Limit filter",
+                    "type": "integer",
+                    "example": 100
+                },
+                "pid": {
+                    "description": "Process ID filter",
+                    "type": "integer",
+                    "example": 1234
+                },
+                "since": {
+                    "description": "Start time filter",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "type": {
+                    "description": "Event type filter",
+                    "type": "string",
+                    "example": "connection"
+                },
+                "until": {
+                    "description": "End time filter",
+                    "type": "string",
+                    "example": "2023-01-01T13:00:00Z"
+                }
+            }
+        },
+        "internal_api.EventsResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "Number of events returned",
+                    "type": "integer",
+                    "example": 25
+                },
+                "events": {
+                    "description": "List of events",
+                    "type": "array",
+                    "items": {}
+                },
+                "filters": {
+                    "description": "Applied filters",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_api.EventFilters"
+                        }
+                    ]
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_count": {
+                    "description": "Total number of matching events",
+                    "type": "integer",
+                    "example": 150
+                }
+            }
+        },
+        "internal_api.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "component": {
+                    "description": "Component name",
+                    "type": "string",
+                    "example": "eBPF Monitor API"
+                },
+                "status": {
+                    "description": "Service status",
+                    "type": "string",
+                    "example": "healthy"
+                },
+                "uptime": {
+                    "description": "Service uptime",
+                    "type": "string",
+                    "example": "1h30m"
+                },
+                "version": {
+                    "description": "API version",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
         "internal_api.PacketDropListResponse": {
             "type": "object",
             "properties": {
@@ -723,6 +914,53 @@ const docTemplate = `{
                     "description": "Query timestamp",
                     "type": "string",
                     "example": "2023-01-01T12:00:00Z"
+                }
+            }
+        },
+        "internal_api.ProgramInfo": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "Program ID",
+                    "type": "integer",
+                    "example": 123
+                },
+                "name": {
+                    "description": "Program name",
+                    "type": "string",
+                    "example": "connection_tracer"
+                },
+                "status": {
+                    "description": "Program status",
+                    "type": "string",
+                    "example": "loaded"
+                },
+                "type": {
+                    "description": "Program type",
+                    "type": "string",
+                    "example": "kprobe"
+                }
+            }
+        },
+        "internal_api.ProgramsResponse": {
+            "type": "object",
+            "properties": {
+                "programs": {
+                    "description": "List of eBPF programs",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ProgramInfo"
+                    }
+                },
+                "query_time": {
+                    "description": "Query timestamp",
+                    "type": "string",
+                    "example": "2023-01-01T12:00:00Z"
+                },
+                "total_count": {
+                    "description": "Total number of programs",
+                    "type": "integer",
+                    "example": 2
                 }
             }
         }
