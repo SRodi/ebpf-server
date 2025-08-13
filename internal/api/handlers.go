@@ -43,8 +43,13 @@ func Initialize(sys *system.System) {
 //	@Failure		503	{object}	map[string]string	"Service unavailable"
 //	@Router			/health [get]
 func HandleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	if globalSystem == nil {
+		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
+		return
+	}
 
+	w.Header().Set("Content-Type", "application/json")
+	
 	health := HealthResponse{
 		Status:    "healthy",
 		Component: "eBPF Monitor API",
@@ -58,9 +63,7 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-}
-
-// HandlePrograms returns the status of all eBPF programs.
+}// HandlePrograms returns the status of all eBPF programs.
 //
 //	@Summary		List eBPF programs
 //	@Description	Get the status and information of all loaded eBPF programs
