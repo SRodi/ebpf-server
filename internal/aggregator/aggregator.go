@@ -249,14 +249,105 @@ func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The aggregator doesn't directly manage eBPF programs
-	// In a real implementation, this could query connected agents for their program status
+	// Query recent events to infer connected agents and their programs
+	query := core.Query{
+		Limit: 1000, // Get a good sample of recent events
+		Since: time.Now().Add(-10 * time.Minute), // Last 10 minutes
+	}
+
+	events, err := a.storage.Query(r.Context(), query)
+	if err != nil {
+		logger.Errorf("Failed to query events for program info: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Aggregate information about connected agents and their programs
+	agents := make(map[string]map[string]interface{}) // node_name -> agent info
+	eventTypes := make(map[string]bool)               // unique event types (indicate programs)
+	
+	for _, event := range events {
+		metadata := event.Metadata()
+		
+		// Extract agent information
+		nodeName, hasNode := metadata["k8s_node_name"].(string)
+		podName, _ := metadata["k8s_pod_name"].(string)
+		namespace, _ := metadata["k8s_namespace"].(string)
+		
+		if hasNode && nodeName != "" {
+			if agents[nodeName] == nil {
+				agents[nodeName] = map[string]interface{}{
+					"node_name":     nodeName,
+					"pod_name":      podName,
+					"namespace":     namespace,
+					"event_types":   make(map[string]bool),
+					"last_seen":     event.Time(),
+					"event_count":   0,
+				}
+			}
+			
+			// Update agent info
+			agent := agents[nodeName]
+			eventTypesMap := agent["event_types"].(map[string]bool)
+			eventTypesMap[event.Type()] = true
+			agent["event_types"] = eventTypesMap
+			agent["event_count"] = agent["event_count"].(int) + 1
+			
+			// Update last seen if this event is more recent
+			if event.Time().After(agent["last_seen"].(time.Time)) {
+				agent["last_seen"] = event.Time()
+			}
+		}
+		
+		// Track unique event types across all agents
+		eventTypes[event.Type()] = true
+	}
+
+	// Convert agents map to slice and format programs
+	var connectedAgents []map[string]interface{}
+	var allPrograms []map[string]interface{}
+	
+	for nodeName, agentInfo := range agents {
+		eventTypesMap := agentInfo["event_types"].(map[string]bool)
+		var programs []string
+		for eventType := range eventTypesMap {
+			programs = append(programs, eventType)
+		}
+		
+		agentData := map[string]interface{}{
+			"node_name":   nodeName,
+			"pod_name":    agentInfo["pod_name"],
+			"namespace":   agentInfo["namespace"],
+			"programs":    programs,
+			"last_seen":   agentInfo["last_seen"].(time.Time).Format(time.RFC3339),
+			"event_count": agentInfo["event_count"],
+		}
+		connectedAgents = append(connectedAgents, agentData)
+		
+		// Add programs to the global list
+		for _, program := range programs {
+			allPrograms = append(allPrograms, map[string]interface{}{
+				"program_type": program,
+				"node_name":    nodeName,
+				"status":       "active", // Inferred from recent events
+			})
+		}
+	}
+
+	// Get unique program types
+	var uniquePrograms []string
+	for eventType := range eventTypes {
+		uniquePrograms = append(uniquePrograms, eventType)
+	}
+
 	response := map[string]interface{}{
-		"message":         "Aggregator does not run eBPF programs directly",
-		"description":     "This endpoint shows program status from connected agents",
-		"connected_agents": 0, // This would be populated based on active agent connections
-		"programs":        []interface{}{}, // This would contain programs from all connected agents
-		"query_time":      time.Now().Format(time.RFC3339),
+		"connected_agents":    len(connectedAgents),
+		"unique_programs":     uniquePrograms,
+		"agents":             connectedAgents,
+		"all_programs":       allPrograms,
+		"total_events_analyzed": len(events),
+		"query_time":         time.Now().Format(time.RFC3339),
+		"description":        "Program information inferred from events received from connected agents",
 	}
 
 	w.Header().Set("Content-Type", "application/json")
