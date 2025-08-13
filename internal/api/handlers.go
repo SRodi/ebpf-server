@@ -44,7 +44,7 @@ func Initialize(sys *system.System) {
 //	@Router			/health [get]
 func HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	health := HealthResponse{
 		Status:    "healthy",
 		Component: "eBPF Monitor API",
@@ -78,7 +78,7 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	}
 
 	programs := globalSystem.GetPrograms()
-	
+
 	// Convert to structured response
 	var programList []ProgramInfo
 	for _, prog := range programs {
@@ -90,7 +90,7 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 		} else {
 			status = "inactive"
 		}
-		
+
 		programInfo := ProgramInfo{
 			Name:   prog.Name,
 			Type:   "eBPF", // Generic type, could be enhanced
@@ -557,34 +557,34 @@ type PacketDropListResponse struct {
 
 // HealthResponse represents the response for health check
 type HealthResponse struct {
-	Status    string `json:"status" example:"healthy"`              // Service status
-	Component string `json:"component" example:"eBPF Monitor API"`  // Component name
-	Uptime    string `json:"uptime" example:"1h30m"`                // Service uptime
-	Version   string `json:"version" example:"1.0.0"`               // API version
+	Status    string `json:"status" example:"healthy"`             // Service status
+	Component string `json:"component" example:"eBPF Monitor API"` // Component name
+	Uptime    string `json:"uptime" example:"1h30m"`               // Service uptime
+	Version   string `json:"version" example:"1.0.0"`              // API version
 }
 
 // ProgramsResponse represents the response for listing eBPF programs
 type ProgramsResponse struct {
-	Programs    []ProgramInfo `json:"programs"`                                   // List of eBPF programs
-	TotalCount  int           `json:"total_count" example:"2"`                    // Total number of programs
-	QueryTime   string        `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	Programs   []ProgramInfo `json:"programs"`                                  // List of eBPF programs
+	TotalCount int           `json:"total_count" example:"2"`                   // Total number of programs
+	QueryTime  string        `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }
 
 // ProgramInfo represents information about an eBPF program
 type ProgramInfo struct {
-	Name   string `json:"name" example:"connection_tracer"`    // Program name
-	Type   string `json:"type" example:"kprobe"`               // Program type
-	Status string `json:"status" example:"loaded"`             // Program status
-	ID     int    `json:"id" example:"123"`                    // Program ID
+	Name   string `json:"name" example:"connection_tracer"` // Program name
+	Type   string `json:"type" example:"kprobe"`            // Program type
+	Status string `json:"status" example:"loaded"`          // Program status
+	ID     int    `json:"id" example:"123"`                 // Program ID
 }
 
 // EventsResponse represents the response for querying events
 type EventsResponse struct {
-	Events     []core.Event `json:"events"`                                     // List of events
-	Count      int          `json:"count" example:"25"`                         // Number of events returned
-	TotalCount int          `json:"total_count" example:"150"`                  // Total number of matching events
+	Events     []core.Event `json:"events"`                                    // List of events
+	Count      int          `json:"count" example:"25"`                        // Number of events returned
+	TotalCount int          `json:"total_count" example:"150"`                 // Total number of matching events
 	QueryTime  string       `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
-	Filters    EventFilters `json:"filters"`                                    // Applied filters
+	Filters    EventFilters `json:"filters"`                                   // Applied filters
 }
 
 // EventFilters represents the filters applied to the event query

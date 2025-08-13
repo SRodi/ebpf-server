@@ -30,11 +30,11 @@ import (
 
 // AggregatedEventsResponse represents the response for querying aggregated events
 type AggregatedEventsResponse struct {
-	Events     []core.Event `json:"events"`                                     // List of aggregated events
-	Count      int          `json:"count" example:"50"`                         // Number of events returned
-	TotalCount int          `json:"total_count" example:"1250"`                 // Total number of matching events
-	QueryTime  string       `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
-	Filters    AggregatedEventFilters `json:"filters"`                          // Applied filters
+	Events     []core.Event           `json:"events"`                                    // List of aggregated events
+	Count      int                    `json:"count" example:"50"`                        // Number of events returned
+	TotalCount int                    `json:"total_count" example:"1250"`                // Total number of matching events
+	QueryTime  string                 `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	Filters    AggregatedEventFilters `json:"filters"`                                   // Applied filters
 }
 
 // AggregatedEventFilters represents the filters applied to aggregated event queries
@@ -48,69 +48,69 @@ type AggregatedEventFilters struct {
 
 // IngestResponse represents the response for event ingestion
 type IngestResponse struct {
-	EventsProcessed int    `json:"events_processed" example:"25"`              // Number of events processed
-	Success         bool   `json:"success" example:"true"`                     // Ingestion success status
+	EventsProcessed int    `json:"events_processed" example:"25"`                  // Number of events processed
+	Success         bool   `json:"success" example:"true"`                         // Ingestion success status
 	Message         string `json:"message" example:"Events ingested successfully"` // Status message
-	Timestamp       string `json:"timestamp" example:"2023-01-01T12:00:00Z"`   // Processing timestamp
+	Timestamp       string `json:"timestamp" example:"2023-01-01T12:00:00Z"`       // Processing timestamp
 }
 
 // AggregationStatsResponse represents the response for aggregation statistics
 type AggregationStatsResponse struct {
-	TotalEvents      int64             `json:"total_events" example:"12500"`                  // Total events stored
-	EventsByType     map[string]int64  `json:"events_by_type"`                                 // Events grouped by type
-	EventsByNode     map[string]int64  `json:"events_by_node"`                                 // Events grouped by node
-	ConnectedAgents  int               `json:"connected_agents" example:"5"`                   // Number of connected agents
-	LastEventTime    string            `json:"last_event_time" example:"2023-01-01T12:00:00Z"` // Timestamp of last event
-	AggregationStart string            `json:"aggregation_start" example:"2023-01-01T10:00:00Z"` // When aggregation started
-	QueryTime        string            `json:"query_time" example:"2023-01-01T12:00:00Z"`     // Query timestamp
+	TotalEvents      int64            `json:"total_events" example:"12500"`                     // Total events stored
+	EventsByType     map[string]int64 `json:"events_by_type"`                                   // Events grouped by type
+	EventsByNode     map[string]int64 `json:"events_by_node"`                                   // Events grouped by node
+	ConnectedAgents  int              `json:"connected_agents" example:"5"`                     // Number of connected agents
+	LastEventTime    string           `json:"last_event_time" example:"2023-01-01T12:00:00Z"`   // Timestamp of last event
+	AggregationStart string           `json:"aggregation_start" example:"2023-01-01T10:00:00Z"` // When aggregation started
+	QueryTime        string           `json:"query_time" example:"2023-01-01T12:00:00Z"`        // Query timestamp
 }
 
 // AggregatorProgramsResponse represents the response for aggregator programs information
 type AggregatorProgramsResponse struct {
-	ConnectedAgents []AgentInfo   `json:"connected_agents"`                           // List of connected agents
-	AllPrograms     []ProgramInfo `json:"all_programs"`                               // All programs across agents
-	TotalAgents     int           `json:"total_agents" example:"3"`                   // Total number of agents
-	TotalPrograms   int           `json:"total_programs" example:"6"`                 // Total number of programs
+	ConnectedAgents []AgentInfo   `json:"connected_agents"`                          // List of connected agents
+	AllPrograms     []ProgramInfo `json:"all_programs"`                              // All programs across agents
+	TotalAgents     int           `json:"total_agents" example:"3"`                  // Total number of agents
+	TotalPrograms   int           `json:"total_programs" example:"6"`                // Total number of programs
 	QueryTime       string        `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }
 
 // AgentInfo represents information about a connected agent
 type AgentInfo struct {
-	NodeName    string        `json:"node_name" example:"worker-1"`                   // Node name
-	LastSeen    string        `json:"last_seen" example:"2023-01-01T12:00:00Z"`       // Last seen timestamp
-	EventCount  int64         `json:"event_count" example:"2500"`                     // Number of events from this agent
-	Programs    []ProgramInfo `json:"programs"`                                       // Programs running on this agent
-	Status      string        `json:"status" example:"active"`                        // Agent status
+	NodeName   string        `json:"node_name" example:"worker-1"`             // Node name
+	LastSeen   string        `json:"last_seen" example:"2023-01-01T12:00:00Z"` // Last seen timestamp
+	EventCount int64         `json:"event_count" example:"2500"`               // Number of events from this agent
+	Programs   []ProgramInfo `json:"programs"`                                 // Programs running on this agent
+	Status     string        `json:"status" example:"active"`                  // Agent status
 }
 
 // ProgramInfo represents information about an eBPF program
 type ProgramInfo struct {
-	Name        string `json:"name" example:"connection_tracer"`        // Program name
-	Type        string `json:"type" example:"kprobe"`                   // Program type
-	Status      string `json:"status" example:"active"`                 // Program status
-	Node        string `json:"node" example:"worker-1"`                 // Node where program is running
-	EventCount  int64  `json:"event_count" example:"1250"`              // Events generated by this program
+	Name       string `json:"name" example:"connection_tracer"` // Program name
+	Type       string `json:"type" example:"kprobe"`            // Program type
+	Status     string `json:"status" example:"active"`          // Program status
+	Node       string `json:"node" example:"worker-1"`          // Node where program is running
+	EventCount int64  `json:"event_count" example:"1250"`       // Events generated by this program
 }
 
 // AggregatedListResponse represents the response for listing aggregated connection/packet drop events
 type AggregatedListResponse struct {
-	TotalPIDs   int                     `json:"total_pids" example:"8"`                     // Number of unique PIDs across all nodes
-	TotalEvents int                     `json:"total_events" example:"45"`                  // Total number of events
-	TotalNodes  int                     `json:"total_nodes" example:"3"`                    // Number of nodes with events
-	EventsByPID map[uint32][]core.Event `json:"events_by_pid"`                              // Events grouped by PID
-	EventsByNode map[string]int         `json:"events_by_node"`                             // Event count by node
-	QueryTime   string                  `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	TotalPIDs    int                     `json:"total_pids" example:"8"`                    // Number of unique PIDs across all nodes
+	TotalEvents  int                     `json:"total_events" example:"45"`                 // Total number of events
+	TotalNodes   int                     `json:"total_nodes" example:"3"`                   // Number of nodes with events
+	EventsByPID  map[uint32][]core.Event `json:"events_by_pid"`                             // Events grouped by PID
+	EventsByNode map[string]int          `json:"events_by_node"`                            // Event count by node
+	QueryTime    string                  `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }
 
 // AggregatedSummaryResponse represents the response for aggregated connection/packet drop summaries
 type AggregatedSummaryResponse struct {
-	Count           int               `json:"count" example:"15"`                        // Total count across all nodes
-	CountByNode     map[string]int    `json:"count_by_node"`                             // Count by node
-	PID             uint32            `json:"pid,omitempty" example:"1234"`              // Process ID (if filtered)
-	Command         string            `json:"command,omitempty" example:"curl"`          // Command name (if filtered)
-	DurationSeconds int               `json:"duration_seconds" example:"60"`             // Duration in seconds
-	TotalNodes      int               `json:"total_nodes" example:"3"`                   // Number of nodes with events
-	QueryTime       string            `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	Count           int            `json:"count" example:"15"`                        // Total count across all nodes
+	CountByNode     map[string]int `json:"count_by_node"`                             // Count by node
+	PID             uint32         `json:"pid,omitempty" example:"1234"`              // Process ID (if filtered)
+	Command         string         `json:"command,omitempty" example:"curl"`          // Command name (if filtered)
+	DurationSeconds int            `json:"duration_seconds" example:"60"`             // Duration in seconds
+	TotalNodes      int            `json:"total_nodes" example:"3"`                   // Number of nodes with events
+	QueryTime       string         `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
 }
 
 // Config represents aggregator configuration.
@@ -338,7 +338,7 @@ func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
 
 	// Query recent events to infer connected agents and their programs
 	query := core.Query{
-		Limit: 1000, // Get a good sample of recent events
+		Limit: 1000,                              // Get a good sample of recent events
 		Since: time.Now().Add(-10 * time.Minute), // Last 10 minutes
 	}
 
@@ -352,40 +352,40 @@ func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	// Aggregate information about connected agents and their programs
 	agents := make(map[string]map[string]interface{}) // node_name -> agent info
 	eventTypes := make(map[string]bool)               // unique event types (indicate programs)
-	
+
 	for _, event := range events {
 		metadata := event.Metadata()
-		
+
 		// Extract agent information
 		nodeName, hasNode := metadata["k8s_node_name"].(string)
 		podName, _ := metadata["k8s_pod_name"].(string)
 		namespace, _ := metadata["k8s_namespace"].(string)
-		
+
 		if hasNode && nodeName != "" {
 			if agents[nodeName] == nil {
 				agents[nodeName] = map[string]interface{}{
-					"node_name":     nodeName,
-					"pod_name":      podName,
-					"namespace":     namespace,
-					"event_types":   make(map[string]bool),
-					"last_seen":     event.Time(),
-					"event_count":   0,
+					"node_name":   nodeName,
+					"pod_name":    podName,
+					"namespace":   namespace,
+					"event_types": make(map[string]bool),
+					"last_seen":   event.Time(),
+					"event_count": 0,
 				}
 			}
-			
+
 			// Update agent info
 			agent := agents[nodeName]
 			eventTypesMap := agent["event_types"].(map[string]bool)
 			eventTypesMap[event.Type()] = true
 			agent["event_types"] = eventTypesMap
 			agent["event_count"] = agent["event_count"].(int) + 1
-			
+
 			// Update last seen if this event is more recent
 			if event.Time().After(agent["last_seen"].(time.Time)) {
 				agent["last_seen"] = event.Time()
 			}
 		}
-		
+
 		// Track unique event types across all agents
 		eventTypes[event.Type()] = true
 	}
@@ -393,14 +393,14 @@ func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	// Convert agents map to slice and format programs
 	var connectedAgents []map[string]interface{}
 	var allPrograms []map[string]interface{}
-	
+
 	for nodeName, agentInfo := range agents {
 		eventTypesMap := agentInfo["event_types"].(map[string]bool)
 		var programs []string
 		for eventType := range eventTypesMap {
 			programs = append(programs, eventType)
 		}
-		
+
 		agentData := map[string]interface{}{
 			"node_name":   nodeName,
 			"pod_name":    agentInfo["pod_name"],
@@ -410,7 +410,7 @@ func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
 			"event_count": agentInfo["event_count"],
 		}
 		connectedAgents = append(connectedAgents, agentData)
-		
+
 		// Add programs to the global list
 		for _, program := range programs {
 			allPrograms = append(allPrograms, map[string]interface{}{
@@ -428,13 +428,13 @@ func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"connected_agents":    len(connectedAgents),
-		"unique_programs":     uniquePrograms,
-		"agents":             connectedAgents,
-		"all_programs":       allPrograms,
+		"connected_agents":      len(connectedAgents),
+		"unique_programs":       uniquePrograms,
+		"agents":                connectedAgents,
+		"all_programs":          allPrograms,
 		"total_events_analyzed": len(events),
-		"query_time":         time.Now().Format(time.RFC3339),
-		"description":        "Program information inferred from events received from connected agents",
+		"query_time":            time.Now().Format(time.RFC3339),
+		"description":           "Program information inferred from events received from connected agents",
 	}
 
 	w.Header().Set("Content-Type", "application/json")

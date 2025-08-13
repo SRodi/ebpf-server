@@ -89,7 +89,7 @@ func TestKubernetesProvider(t *testing.T) {
 
 		provider := NewProvider()
 		data := make(map[string]interface{})
-		
+
 		provider.AddToMap(data)
 
 		if data["k8s_node_name"] != "test-node" {

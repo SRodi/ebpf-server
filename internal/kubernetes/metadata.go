@@ -25,7 +25,7 @@ func NewProvider() *Provider {
 	p := &Provider{
 		enabled: isKubernetesEnvironment(),
 	}
-	
+
 	if p.enabled {
 		p.metadata = &Metadata{
 			NodeName:  os.Getenv("NODE_NAME"),
@@ -33,7 +33,7 @@ func NewProvider() *Provider {
 			Namespace: os.Getenv("POD_NAMESPACE"),
 		}
 	}
-	
+
 	return p
 }
 
@@ -48,11 +48,11 @@ func (p *Provider) IsEnabled() bool {
 func (p *Provider) GetMetadata() *Metadata {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	if !p.enabled || p.metadata == nil {
 		return nil
 	}
-	
+
 	// Return a copy to avoid race conditions
 	return &Metadata{
 		NodeName:  p.metadata.NodeName,
@@ -66,12 +66,12 @@ func (p *Provider) AddToMap(data map[string]interface{}) {
 	if !p.IsEnabled() {
 		return
 	}
-	
+
 	metadata := p.GetMetadata()
 	if metadata == nil {
 		return
 	}
-	
+
 	if metadata.NodeName != "" {
 		data["k8s_node_name"] = metadata.NodeName
 	}
@@ -89,16 +89,16 @@ func isKubernetesEnvironment() bool {
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
 		return true
 	}
-	
+
 	// Check deployment mode environment variable
 	if os.Getenv("DEPLOYMENT_MODE") == "kubernetes" {
 		return true
 	}
-	
+
 	// Check if we can find Kubernetes service account token
 	if _, err := os.Stat("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
 		return true
 	}
-	
+
 	return false
 }

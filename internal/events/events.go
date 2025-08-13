@@ -23,7 +23,7 @@ var (
 	systemBootTime     time.Time
 	bootTimeCalculated bool
 	bootTimeMutex      sync.Mutex
-	
+
 	// Global Kubernetes metadata provider with proper synchronization
 	k8sProvider *kubernetes.Provider
 	k8sMutex    sync.RWMutex // Protects both k8sProvider and initialization
@@ -123,17 +123,17 @@ func getKubernetesProvider() *kubernetes.Provider {
 		return provider
 	}
 	k8sMutex.RUnlock()
-	
+
 	// Slow path: need to initialize, acquire write lock
 	k8sMutex.Lock()
 	defer k8sMutex.Unlock()
-	
+
 	// Double-check after acquiring write lock
 	if !k8sInit {
 		k8sProvider = kubernetes.NewProvider()
 		k8sInit = true
 	}
-	
+
 	return k8sProvider
 }
 
@@ -142,7 +142,7 @@ func getKubernetesProvider() *kubernetes.Provider {
 func resetKubernetesProvider() {
 	k8sMutex.Lock()
 	defer k8sMutex.Unlock()
-	
+
 	k8sProvider = nil
 	k8sInit = false
 }
