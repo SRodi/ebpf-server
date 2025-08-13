@@ -82,7 +82,7 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	// Convert to structured response
 	var programList []ProgramInfo
 	for _, prog := range programs {
-		status := "unknown"
+		var status string
 		if prog.Loaded && prog.Attached {
 			status = "active"
 		} else if prog.Loaded {
