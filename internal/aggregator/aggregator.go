@@ -118,13 +118,21 @@ type Config struct {
 	HTTPAddr string
 }
 
+// ProgramCache caches program information to avoid expensive queries
+type ProgramCache struct {
+	data      *AggregatorProgramsResponse
+	lastCheck time.Time
+	mu        sync.RWMutex
+}
+
 // Aggregator collects and aggregates events from multiple eBPF agents.
 type Aggregator struct {
-	config  *Config
-	storage core.EventSink
-	stats   *Stats
-	mu      sync.RWMutex
-	running bool
+	config       *Config
+	storage      core.EventSink
+	stats        *Stats
+	programCache *ProgramCache
+	mu           sync.RWMutex
+	running      bool
 }
 
 // Stats represents aggregation statistics.
@@ -154,6 +162,7 @@ func New(config *Config) (*Aggregator, error) {
 			EventsByNode: make(map[string]int64),
 			StartTime:    time.Now(),
 		},
+		programCache: &ProgramCache{},
 	}, nil
 }
 
@@ -168,6 +177,10 @@ func (a *Aggregator) Start(ctx context.Context) error {
 
 	logger.Info("Starting event aggregator")
 	a.running = true
+
+	// Start cleanup routine for memory storage
+	go a.cleanupRoutine(ctx)
+
 	return nil
 }
 
@@ -276,6 +289,12 @@ func (a *Aggregator) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// Update stats
 	a.updateStats(int64(processed), requestData.Events)
 
+	// Invalidate program cache if we processed events successfully
+	// This ensures the cache reflects newly ingested data
+	if processed > 0 {
+		a.invalidateProgramCache()
+	}
+
 	// Return success response
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]interface{}{
@@ -313,6 +332,20 @@ func (a *Aggregator) HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	a.stats.mu.RUnlock()
 
+	// Add current storage info for debugging
+	if memStorage, ok := a.storage.(*storage.MemoryStorage); ok {
+		// Get a rough count of current events (last hour)
+		query := core.Query{
+			Since: time.Now().Add(-1 * time.Hour),
+		}
+		currentEvents, _ := memStorage.Count(context.Background(), query)
+		statsData["current_events_last_hour"] = currentEvents
+
+		// Get total events in storage
+		allEvents, _ := memStorage.Count(context.Background(), core.Query{})
+		statsData["total_events_in_storage"] = allEvents
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(statsData); err != nil {
 		logger.Errorf("Failed to encode stats: %v", err)
@@ -321,6 +354,7 @@ func (a *Aggregator) HandleStats(w http.ResponseWriter, r *http.Request) {
 
 // HandlePrograms handles HTTP requests for program information.
 // Since the aggregator doesn't run eBPF programs directly, it returns program status from connected agents.
+// This endpoint uses caching to avoid expensive queries on each request.
 //
 //	@Summary		Get program information
 //	@Description	Get information about eBPF programs running on connected agents
@@ -336,17 +370,53 @@ func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	const cacheDuration = 2 * time.Minute // Cache for 2 minutes
+
+	// Check if we have cached data that's still fresh
+	a.programCache.mu.RLock()
+	if a.programCache.data != nil && time.Since(a.programCache.lastCheck) < cacheDuration {
+		response := a.programCache.data
+		a.programCache.mu.RUnlock()
+
+		logger.Debugf("Serving cached program information (age: %v)", time.Since(a.programCache.lastCheck))
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d", int(cacheDuration.Seconds())))
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			logger.Errorf("Failed to encode cached programs response: %v", err)
+		}
+		return
+	}
+	a.programCache.mu.RUnlock()
+
+	// Cache is stale or empty, refresh it
+	response, err := a.refreshProgramCache()
+	if err != nil {
+		logger.Errorf("Failed to refresh program cache: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Debugf("Serving fresh program information (%d agents, %d programs)",
+		response.TotalAgents, response.TotalPrograms)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d", int(cacheDuration.Seconds())))
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		logger.Errorf("Failed to encode programs response: %v", err)
+	}
+}
+
+// refreshProgramCache refreshes the program information cache by querying recent events
+func (a *Aggregator) refreshProgramCache() (*AggregatorProgramsResponse, error) {
 	// Query recent events to infer connected agents and their programs
 	query := core.Query{
 		Limit: 1000,                              // Get a good sample of recent events
 		Since: time.Now().Add(-10 * time.Minute), // Last 10 minutes
 	}
 
-	events, err := a.storage.Query(r.Context(), query)
+	events, err := a.storage.Query(context.Background(), query)
 	if err != nil {
-		logger.Errorf("Failed to query events for program info: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+		return nil, fmt.Errorf("failed to query events for program info: %v", err)
 	}
 
 	// Aggregate information about connected agents and their programs
@@ -391,55 +461,85 @@ func (a *Aggregator) HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert agents map to slice and format programs
-	var connectedAgents []map[string]interface{}
-	var allPrograms []map[string]interface{}
+	var connectedAgents []AgentInfo
+	var allPrograms []ProgramInfo
 
 	for nodeName, agentInfo := range agents {
 		eventTypesMap := agentInfo["event_types"].(map[string]bool)
-		var programs []string
+		var programs []ProgramInfo
+		eventCount := int64(agentInfo["event_count"].(int))
+
 		for eventType := range eventTypesMap {
-			programs = append(programs, eventType)
+			program := ProgramInfo{
+				Name:       eventType + "_tracer",
+				Type:       eventType,
+				Status:     "active", // Inferred from recent events
+				Node:       nodeName,
+				EventCount: eventCount,
+			}
+			programs = append(programs, program)
+			allPrograms = append(allPrograms, program)
 		}
 
-		agentData := map[string]interface{}{
-			"node_name":   nodeName,
-			"pod_name":    agentInfo["pod_name"],
-			"namespace":   agentInfo["namespace"],
-			"programs":    programs,
-			"last_seen":   agentInfo["last_seen"].(time.Time).Format(time.RFC3339),
-			"event_count": agentInfo["event_count"],
+		agentData := AgentInfo{
+			NodeName:   nodeName,
+			LastSeen:   agentInfo["last_seen"].(time.Time).Format(time.RFC3339),
+			EventCount: eventCount,
+			Programs:   programs,
+			Status:     "active",
 		}
 		connectedAgents = append(connectedAgents, agentData)
+	}
 
-		// Add programs to the global list
-		for _, program := range programs {
-			allPrograms = append(allPrograms, map[string]interface{}{
-				"program_type": program,
-				"node_name":    nodeName,
-				"status":       "active", // Inferred from recent events
-			})
+	response := &AggregatorProgramsResponse{
+		ConnectedAgents: connectedAgents,
+		AllPrograms:     allPrograms,
+		TotalAgents:     len(connectedAgents),
+		TotalPrograms:   len(allPrograms),
+		QueryTime:       time.Now().Format(time.RFC3339),
+	}
+
+	// Update cache
+	a.programCache.mu.Lock()
+	a.programCache.data = response
+	a.programCache.lastCheck = time.Now()
+	a.programCache.mu.Unlock()
+
+	return response, nil
+}
+
+// invalidateProgramCache invalidates the program information cache
+func (a *Aggregator) invalidateProgramCache() {
+	a.programCache.mu.Lock()
+	a.programCache.data = nil
+	a.programCache.lastCheck = time.Time{}
+	a.programCache.mu.Unlock()
+}
+
+// cleanupRoutine runs periodic cleanup of old events to prevent memory bloat
+func (a *Aggregator) cleanupRoutine(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute) // Cleanup every 5 minutes
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Debug("Cleanup routine stopping due to context cancellation")
+			return
+		case <-ticker.C:
+			if !a.IsRunning() {
+				continue
+			}
+
+			// Clean up events older than 2 hours
+			maxAge := 2 * time.Hour
+
+			if memStorage, ok := a.storage.(*storage.MemoryStorage); ok {
+				logger.Debugf("Running cleanup: removing events older than %v", maxAge)
+				memStorage.Cleanup(maxAge)
+				logger.Debugf("Cleanup completed")
+			}
 		}
-	}
-
-	// Get unique program types
-	var uniquePrograms []string
-	for eventType := range eventTypes {
-		uniquePrograms = append(uniquePrograms, eventType)
-	}
-
-	response := map[string]interface{}{
-		"connected_agents":      len(connectedAgents),
-		"unique_programs":       uniquePrograms,
-		"agents":                connectedAgents,
-		"all_programs":          allPrograms,
-		"total_events_analyzed": len(events),
-		"query_time":            time.Now().Format(time.RFC3339),
-		"description":           "Program information inferred from events received from connected agents",
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		logger.Errorf("Failed to encode programs response: %v", err)
 	}
 }
 
@@ -619,16 +719,29 @@ func (a *Aggregator) HandleListConnections(w http.ResponseWriter, r *http.Reques
 
 	// Group by PID for compatibility
 	eventsByPID := make(map[uint32][]core.Event)
+	eventsByNode := make(map[string]int)
+	nodeSet := make(map[string]bool)
+
 	for _, event := range events {
 		pid := event.PID()
 		eventsByPID[pid] = append(eventsByPID[pid], event)
+
+		// Extract node information from event metadata
+		if metadata := event.Metadata(); metadata != nil {
+			if nodeName, ok := metadata["k8s_node_name"].(string); ok && nodeName != "" {
+				eventsByNode[nodeName]++
+				nodeSet[nodeName] = true
+			}
+		}
 	}
 
-	response := map[string]interface{}{
-		"total_pids":    len(eventsByPID),
-		"total_events":  len(events),
-		"events_by_pid": eventsByPID,
-		"query_time":    time.Now().Format(time.RFC3339),
+	response := AggregatedListResponse{
+		TotalPIDs:    len(eventsByPID),
+		TotalEvents:  len(events),
+		TotalNodes:   len(nodeSet),
+		EventsByPID:  eventsByPID,
+		EventsByNode: eventsByNode,
+		QueryTime:    time.Now().Format(time.RFC3339),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -670,16 +783,29 @@ func (a *Aggregator) HandleListPacketDrops(w http.ResponseWriter, r *http.Reques
 
 	// Group by PID for compatibility
 	eventsByPID := make(map[uint32][]core.Event)
+	eventsByNode := make(map[string]int)
+	nodeSet := make(map[string]bool)
+
 	for _, event := range events {
 		pid := event.PID()
 		eventsByPID[pid] = append(eventsByPID[pid], event)
+
+		// Extract node information from event metadata
+		if metadata := event.Metadata(); metadata != nil {
+			if nodeName, ok := metadata["k8s_node_name"].(string); ok && nodeName != "" {
+				eventsByNode[nodeName]++
+				nodeSet[nodeName] = true
+			}
+		}
 	}
 
-	response := map[string]interface{}{
-		"total_pids":    len(eventsByPID),
-		"total_events":  len(events),
-		"events_by_pid": eventsByPID,
-		"query_time":    time.Now().Format(time.RFC3339),
+	response := AggregatedListResponse{
+		TotalPIDs:    len(eventsByPID),
+		TotalEvents:  len(events),
+		TotalNodes:   len(nodeSet),
+		EventsByPID:  eventsByPID,
+		EventsByNode: eventsByNode,
+		QueryTime:    time.Now().Format(time.RFC3339),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -753,12 +879,39 @@ func (a *Aggregator) HandleConnectionSummary(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	response := map[string]interface{}{
-		"count":            count,
-		"pid":              request.PID,
-		"command":          request.Command,
-		"duration_seconds": request.Duration,
-		"query_time":       time.Now().Format(time.RFC3339),
+	logger.Debugf("🔍 CONNECTION SUMMARY: query=%+v count=%d", query, count)
+
+	// Get events to analyze by node for detailed response
+	eventsQuery := query
+	eventsQuery.Limit = 1000 // Reasonable limit for analysis
+	events, err := a.storage.Query(r.Context(), eventsQuery)
+	if err != nil {
+		logger.Errorf("Error querying connection events for node analysis: %v", err)
+		// Fall back to basic response without node breakdown
+		events = nil
+	}
+
+	// Analyze events by node
+	countByNode := make(map[string]int)
+	nodeSet := make(map[string]bool)
+
+	for _, event := range events {
+		if metadata := event.Metadata(); metadata != nil {
+			if nodeName, ok := metadata["k8s_node_name"].(string); ok && nodeName != "" {
+				countByNode[nodeName]++
+				nodeSet[nodeName] = true
+			}
+		}
+	}
+
+	response := AggregatedSummaryResponse{
+		Count:           count,
+		CountByNode:     countByNode,
+		PID:             request.PID,
+		Command:         request.Command,
+		DurationSeconds: request.Duration,
+		TotalNodes:      len(nodeSet),
+		QueryTime:       time.Now().Format(time.RFC3339),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -832,12 +985,39 @@ func (a *Aggregator) HandlePacketDropSummary(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	response := map[string]interface{}{
-		"count":            count,
-		"pid":              request.PID,
-		"command":          request.Command,
-		"duration_seconds": request.Duration,
-		"query_time":       time.Now().Format(time.RFC3339),
+	logger.Debugf("🔍 PACKET DROP SUMMARY: query=%+v count=%d", query, count)
+
+	// Get events to analyze by node for detailed response
+	eventsQuery := query
+	eventsQuery.Limit = 1000 // Reasonable limit for analysis
+	events, err := a.storage.Query(r.Context(), eventsQuery)
+	if err != nil {
+		logger.Errorf("Error querying packet drop events for node analysis: %v", err)
+		// Fall back to basic response without node breakdown
+		events = nil
+	}
+
+	// Analyze events by node
+	countByNode := make(map[string]int)
+	nodeSet := make(map[string]bool)
+
+	for _, event := range events {
+		if metadata := event.Metadata(); metadata != nil {
+			if nodeName, ok := metadata["k8s_node_name"].(string); ok && nodeName != "" {
+				countByNode[nodeName]++
+				nodeSet[nodeName] = true
+			}
+		}
+	}
+
+	response := AggregatedSummaryResponse{
+		Count:           count,
+		CountByNode:     countByNode,
+		PID:             request.PID,
+		Command:         request.Command,
+		DurationSeconds: request.Duration,
+		TotalNodes:      len(nodeSet),
+		QueryTime:       time.Now().Format(time.RFC3339),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

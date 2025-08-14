@@ -64,7 +64,9 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-} // HandlePrograms returns the status of all eBPF programs.
+}
+
+// HandlePrograms returns the status of all eBPF programs.
 // @Summary		List eBPF programs
 // @Description	Get the status and information of all loaded eBPF programs
 // @Tags			programs
@@ -96,11 +98,13 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 
 		// Use a hash of the program name as a unique ID
 		hash := sha256.Sum256([]byte(prog.Name))
+		// Use first 4 bytes of hash as ID for better uniqueness (2^32 possible values)
+		id := int(hash[0])<<24 | int(hash[1])<<16 | int(hash[2])<<8 | int(hash[3])
 		programInfo := ProgramInfo{
 			Name:   prog.Name,
 			Type:   "eBPF", // Generic type, could be enhanced
 			Status: status,
-			ID:     int(hash[0]), // Use first byte of hash as ID
+			ID:     id,
 		}
 		programList = append(programList, programInfo)
 	}
