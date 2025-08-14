@@ -14,6 +14,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -39,8 +40,8 @@ func Initialize(sys *system.System) {
 //	@Tags			health
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"Health status"
-//	@Failure		503	{object}	map[string]string		"Service unavailable"
+//	@Success		200	{object}	HealthResponse		"Health status"
+//	@Failure		503	{object}	map[string]string	"Service unavailable"
 //	@Router			/health [get]
 func HandleHealth(w http.ResponseWriter, r *http.Request) {
 	if globalSystem == nil {
@@ -48,30 +49,33 @@ func HandleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	health := map[string]interface{}{
-		"status":  "healthy",
-		"running": globalSystem.IsRunning(),
-		"time":    time.Now().Format(time.RFC3339),
+	w.Header().Set("Content-Type", "application/json")
+
+	health := HealthResponse{
+		Status:    "healthy",
+		Component: "eBPF Monitor API",
+		Uptime:    "active", // Since we don't have access to start time, use a generic status
+		Version:   "1.0.0",
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(health); err != nil {
 		logger.Errorf("Error encoding health response: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 }
 
 // HandlePrograms returns the status of all eBPF programs.
-//
-//	@Summary		List eBPF programs
-//	@Description	Get the status and information of all loaded eBPF programs
-//	@Tags			programs
-//	@Accept			json
-//	@Produce		json
-//	@Success		200	{object}	map[string]interface{}	"List of eBPF programs"
-//	@Failure		500	{object}	map[string]string		"Internal server error"
-//	@Failure		503	{object}	map[string]string		"Service unavailable"
-//	@Router			/api/programs [get]
+// @Summary		List eBPF programs
+// @Description	Get the status and information of all loaded eBPF programs
+// @Tags			programs
+// @Accept			json
+// @Produce		json
+// @Success		200	{object}	ProgramsResponse		"List of eBPF programs"
+// @Failure		500	{object}	map[string]string		"Internal server error"
+// @Failure		503	{object}	map[string]string		"Service unavailable"
+// @Router			/api/programs [get]
 func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 	if globalSystem == nil {
 		http.Error(w, "System not initialized", http.StatusServiceUnavailable)
@@ -80,8 +84,39 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 
 	programs := globalSystem.GetPrograms()
 
+	// Convert to structured response
+	var programList []ProgramInfo
+	for _, prog := range programs {
+		var status string
+		if prog.Loaded && prog.Attached {
+			status = "active"
+		} else if prog.Loaded {
+			status = "loaded"
+		} else {
+			status = "inactive"
+		}
+
+		// Use a hash of the program name as a unique ID
+		hash := sha256.Sum256([]byte(prog.Name))
+		// Use first 4 bytes of hash as ID for better uniqueness (2^32 possible values)
+		id := int(hash[0])<<24 | int(hash[1])<<16 | int(hash[2])<<8 | int(hash[3])
+		programInfo := ProgramInfo{
+			Name:   prog.Name,
+			Type:   "eBPF", // Generic type, could be enhanced
+			Status: status,
+			ID:     id,
+		}
+		programList = append(programList, programInfo)
+	}
+
+	response := ProgramsResponse{
+		Programs:   programList,
+		TotalCount: len(programList),
+		QueryTime:  time.Now().Format(time.RFC3339),
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(programs); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		logger.Errorf("Error encoding programs response: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
@@ -100,7 +135,7 @@ func HandlePrograms(w http.ResponseWriter, r *http.Request) {
 //	@Param			since		query		string	false	"Start time (RFC3339 format)"
 //	@Param			until		query		string	false	"End time (RFC3339 format)"
 //	@Param			limit		query		int		false	"Maximum number of events to return (default: 100)"
-//	@Success		200			{object}	map[string]interface{}	"Filtered events"
+//	@Success		200			{object}	EventsResponse			"Filtered events"
 //	@Failure		500			{object}	map[string]string		"Internal server error"
 //	@Failure		503			{object}	map[string]string		"Service unavailable"
 //	@Router			/api/events [get]
@@ -158,10 +193,34 @@ func HandleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := map[string]interface{}{
-		"events": events,
-		"count":  len(events),
-		"query":  query,
+	// Get total count for the same query without limit
+	totalQuery := query
+	totalQuery.Limit = 0
+	totalCount, err := globalSystem.CountEvents(ctx, totalQuery)
+	if err != nil {
+		totalCount = len(events) // Fallback to returned count
+	}
+
+	// Build filters struct for response
+	filters := EventFilters{
+		Type:    query.EventType,
+		PID:     query.PID,
+		Command: query.Command,
+		Limit:   query.Limit,
+	}
+	if !query.Since.IsZero() {
+		filters.Since = query.Since.Format(time.RFC3339)
+	}
+	if !query.Until.IsZero() {
+		filters.Until = query.Until.Format(time.RFC3339)
+	}
+
+	response := EventsResponse{
+		Events:     events,
+		Count:      len(events),
+		TotalCount: totalCount,
+		QueryTime:  time.Now().Format(time.RFC3339),
+		Filters:    filters,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -178,9 +237,9 @@ func HandleEvents(w http.ResponseWriter, r *http.Request) {
 //	@Tags			connections
 //	@Accept			json
 //	@Produce		json
-//	@Param			pid				query		int		false	"Process ID (GET only)"
-//	@Param			command			query		string	false	"Command name (GET only)"
-//	@Param			duration_seconds	query	int		false	"Duration in seconds (GET only, default: 60)"
+//	@Param			pid				query		int		false	"Process ID"
+//	@Param			command			query		string	false	"Command name"
+//	@Param			duration_seconds	query	int		false	"Duration in seconds (default: 60)"
 //	@Param			request			body		ConnectionSummaryRequest	false	"Connection summary request (POST only)"
 //	@Success		200				{object}	ConnectionSummaryResponse	"Connection statistics"
 //	@Failure		400				{object}	map[string]string			"Bad request"
@@ -264,9 +323,9 @@ func HandleConnectionSummary(w http.ResponseWriter, r *http.Request) {
 //	@Tags			packet_drops
 //	@Accept			json
 //	@Produce		json
-//	@Param			pid				query		int		false	"Process ID (GET only)"
-//	@Param			command			query		string	false	"Command name (GET only)"
-//	@Param			duration_seconds	query	int		false	"Duration in seconds (GET only, default: 60)"
+//	@Param			pid				query		int		false	"Process ID"
+//	@Param			command			query		string	false	"Command name"
+//	@Param			duration_seconds	query	int		false	"Duration in seconds (default: 60)"
 //	@Param			request			body		PacketDropSummaryRequest	false	"Packet drop summary request (POST only)"
 //	@Success		200				{object}	PacketDropSummaryResponse	"Packet drop statistics"
 //	@Failure		400				{object}	map[string]string			"Bad request"
@@ -503,4 +562,46 @@ type PacketDropListResponse struct {
 	TotalEvents int                     `json:"total_events" example:"7"`                  // Total number of events
 	EventsByPID map[uint32][]core.Event `json:"events_by_pid"`                             // Events grouped by PID
 	QueryTime   string                  `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// HealthResponse represents the response for health check
+type HealthResponse struct {
+	Status    string `json:"status" example:"healthy"`             // Service status
+	Component string `json:"component" example:"eBPF Monitor API"` // Component name
+	Uptime    string `json:"uptime" example:"1h30m"`               // Service uptime
+	Version   string `json:"version" example:"1.0.0"`              // API version
+}
+
+// ProgramsResponse represents the response for listing eBPF programs
+type ProgramsResponse struct {
+	Programs   []ProgramInfo `json:"programs"`                                  // List of eBPF programs
+	TotalCount int           `json:"total_count" example:"2"`                   // Total number of programs
+	QueryTime  string        `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+}
+
+// ProgramInfo represents information about an eBPF program
+type ProgramInfo struct {
+	Name   string `json:"name" example:"connection_tracer"` // Program name
+	Type   string `json:"type" example:"kprobe"`            // Program type
+	Status string `json:"status" example:"loaded"`          // Program status
+	ID     int    `json:"id" example:"123"`                 // Program ID
+}
+
+// EventsResponse represents the response for querying events
+type EventsResponse struct {
+	Events     []core.Event `json:"events"`                                    // List of events
+	Count      int          `json:"count" example:"25"`                        // Number of events returned
+	TotalCount int          `json:"total_count" example:"150"`                 // Total number of matching events
+	QueryTime  string       `json:"query_time" example:"2023-01-01T12:00:00Z"` // Query timestamp
+	Filters    EventFilters `json:"filters"`                                   // Applied filters
+}
+
+// EventFilters represents the filters applied to the event query
+type EventFilters struct {
+	Type    string `json:"type,omitempty" example:"connection"`            // Event type filter
+	PID     uint32 `json:"pid,omitempty" example:"1234"`                   // Process ID filter
+	Command string `json:"command,omitempty" example:"curl"`               // Command filter
+	Since   string `json:"since,omitempty" example:"2023-01-01T12:00:00Z"` // Start time filter
+	Until   string `json:"until,omitempty" example:"2023-01-01T13:00:00Z"` // End time filter
+	Limit   int    `json:"limit,omitempty" example:"100"`                  // Limit filter
 }

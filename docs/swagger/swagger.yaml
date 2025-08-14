@@ -1,5 +1,251 @@
 basePath: /
 definitions:
+  aggregator.AgentInfo:
+    properties:
+      event_count:
+        description: Number of events from this agent
+        example: 2500
+        type: integer
+      last_seen:
+        description: Last seen timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      node_name:
+        description: Node name
+        example: worker-1
+        type: string
+      programs:
+        description: Programs running on this agent
+        items:
+          $ref: '#/definitions/aggregator.ProgramInfo'
+        type: array
+      status:
+        description: Agent status
+        example: active
+        type: string
+    type: object
+  aggregator.AggregatedEventFilters:
+    properties:
+      limit:
+        description: Limit filter
+        example: 100
+        type: integer
+      node:
+        description: Node name filter
+        example: worker-1
+        type: string
+      since:
+        description: Start time filter
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      type:
+        description: Event type filter
+        example: connection
+        type: string
+      until:
+        description: End time filter
+        example: "2023-01-01T13:00:00Z"
+        type: string
+    type: object
+  aggregator.AggregatedEventsResponse:
+    properties:
+      count:
+        description: Number of events returned
+        example: 50
+        type: integer
+      events:
+        description: List of aggregated events
+        items: {}
+        type: array
+      filters:
+        allOf:
+        - $ref: '#/definitions/aggregator.AggregatedEventFilters'
+        description: Applied filters
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_count:
+        description: Total number of matching events
+        example: 1250
+        type: integer
+    type: object
+  aggregator.AggregatedListResponse:
+    properties:
+      events_by_node:
+        additionalProperties:
+          type: integer
+        description: Event count by node
+        type: object
+      events_by_pid:
+        additionalProperties:
+          items: {}
+          type: array
+        description: Events grouped by PID
+        type: object
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_events:
+        description: Total number of events
+        example: 45
+        type: integer
+      total_nodes:
+        description: Number of nodes with events
+        example: 3
+        type: integer
+      total_pids:
+        description: Number of unique PIDs across all nodes
+        example: 8
+        type: integer
+    type: object
+  aggregator.AggregatedSummaryResponse:
+    properties:
+      command:
+        description: Command name (if filtered)
+        example: curl
+        type: string
+      count:
+        description: Total count across all nodes
+        example: 15
+        type: integer
+      count_by_node:
+        additionalProperties:
+          type: integer
+        description: Count by node
+        type: object
+      duration_seconds:
+        description: Duration in seconds
+        example: 60
+        type: integer
+      pid:
+        description: Process ID (if filtered)
+        example: 1234
+        type: integer
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_nodes:
+        description: Number of nodes with events
+        example: 3
+        type: integer
+    type: object
+  aggregator.AggregationStatsResponse:
+    properties:
+      aggregation_start:
+        description: When aggregation started
+        example: "2023-01-01T10:00:00Z"
+        type: string
+      connected_agents:
+        description: Number of connected agents
+        example: 5
+        type: integer
+      events_by_node:
+        additionalProperties:
+          format: int64
+          type: integer
+        description: Events grouped by node
+        type: object
+      events_by_type:
+        additionalProperties:
+          format: int64
+          type: integer
+        description: Events grouped by type
+        type: object
+      last_event_time:
+        description: Timestamp of last event
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_events:
+        description: Total events stored
+        example: 12500
+        type: integer
+    type: object
+  aggregator.AggregatorProgramsResponse:
+    properties:
+      all_programs:
+        description: All programs across agents
+        items:
+          $ref: '#/definitions/aggregator.ProgramInfo'
+        type: array
+      connected_agents:
+        description: List of connected agents
+        items:
+          $ref: '#/definitions/aggregator.AgentInfo'
+        type: array
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_agents:
+        description: Total number of agents
+        example: 3
+        type: integer
+      total_programs:
+        description: Total number of programs
+        example: 6
+        type: integer
+    type: object
+  aggregator.HealthCheck:
+    properties:
+      component:
+        type: string
+      stats:
+        additionalProperties: true
+        type: object
+      status:
+        type: string
+      uptime:
+        type: string
+    type: object
+  aggregator.IngestResponse:
+    properties:
+      events_processed:
+        description: Number of events processed
+        example: 25
+        type: integer
+      message:
+        description: Status message
+        example: Events ingested successfully
+        type: string
+      success:
+        description: Ingestion success status
+        example: true
+        type: boolean
+      timestamp:
+        description: Processing timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+    type: object
+  aggregator.ProgramInfo:
+    properties:
+      event_count:
+        description: Events generated by this program
+        example: 1250
+        type: integer
+      name:
+        description: Program name
+        example: connection_tracer
+        type: string
+      node:
+        description: Node where program is running
+        example: worker-1
+        type: string
+      status:
+        description: Program status
+        example: active
+        type: string
+      type:
+        description: Program type
+        example: kprobe
+        type: string
+    type: object
   internal_api.ConnectionListResponse:
     properties:
       events_by_pid:
@@ -57,6 +303,75 @@ definitions:
       query_time:
         description: Query timestamp
         example: "2023-01-01T12:00:00Z"
+        type: string
+    type: object
+  internal_api.EventFilters:
+    properties:
+      command:
+        description: Command filter
+        example: curl
+        type: string
+      limit:
+        description: Limit filter
+        example: 100
+        type: integer
+      pid:
+        description: Process ID filter
+        example: 1234
+        type: integer
+      since:
+        description: Start time filter
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      type:
+        description: Event type filter
+        example: connection
+        type: string
+      until:
+        description: End time filter
+        example: "2023-01-01T13:00:00Z"
+        type: string
+    type: object
+  internal_api.EventsResponse:
+    properties:
+      count:
+        description: Number of events returned
+        example: 25
+        type: integer
+      events:
+        description: List of events
+        items: {}
+        type: array
+      filters:
+        allOf:
+        - $ref: '#/definitions/internal_api.EventFilters'
+        description: Applied filters
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_count:
+        description: Total number of matching events
+        example: 150
+        type: integer
+    type: object
+  internal_api.HealthResponse:
+    properties:
+      component:
+        description: Component name
+        example: eBPF Monitor API
+        type: string
+      status:
+        description: Service status
+        example: healthy
+        type: string
+      uptime:
+        description: Service uptime
+        example: 1h30m
+        type: string
+      version:
+        description: API version
+        example: 1.0.0
         type: string
     type: object
   internal_api.PacketDropListResponse:
@@ -118,6 +433,41 @@ definitions:
         example: "2023-01-01T12:00:00Z"
         type: string
     type: object
+  internal_api.ProgramInfo:
+    properties:
+      id:
+        description: Program ID
+        example: 123
+        type: integer
+      name:
+        description: Program name
+        example: connection_tracer
+        type: string
+      status:
+        description: Program status
+        example: loaded
+        type: string
+      type:
+        description: Program type
+        example: kprobe
+        type: string
+    type: object
+  internal_api.ProgramsResponse:
+    properties:
+      programs:
+        description: List of eBPF programs
+        items:
+          $ref: '#/definitions/internal_api.ProgramInfo'
+        type: array
+      query_time:
+        description: Query timestamp
+        example: "2023-01-01T12:00:00Z"
+        type: string
+      total_count:
+        description: Total number of programs
+        example: 2
+        type: integer
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -138,15 +488,15 @@ paths:
       description: Get count of connection events filtered by PID, command, and time
         window
       parameters:
-      - description: Process ID (GET only)
+      - description: Process ID
         in: query
         name: pid
         type: integer
-      - description: Command name (GET only)
+      - description: Command name
         in: query
         name: command
         type: string
-      - description: 'Duration in seconds (GET only, default: 60)'
+      - description: 'Duration in seconds (default: 60)'
         in: query
         name: duration_seconds
         type: integer
@@ -189,15 +539,15 @@ paths:
       description: Get count of connection events filtered by PID, command, and time
         window
       parameters:
-      - description: Process ID (GET only)
+      - description: Process ID
         in: query
         name: pid
         type: integer
-      - description: Command name (GET only)
+      - description: Command name
         in: query
         name: command
         type: string
-      - description: 'Duration in seconds (GET only, default: 60)'
+      - description: 'Duration in seconds (default: 60)'
         in: query
         name: duration_seconds
         type: integer
@@ -270,8 +620,7 @@ paths:
         "200":
           description: Filtered events
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.EventsResponse'
         "500":
           description: Internal server error
           schema:
@@ -285,6 +634,40 @@ paths:
               type: string
             type: object
       summary: Query events
+      tags:
+      - events
+  /api/events/ingest:
+    post:
+      consumes:
+      - application/json
+      description: Accept events from eBPF agents for aggregation and storage
+      parameters:
+      - description: Events to ingest
+        in: body
+        name: events
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ingestion result
+          schema:
+            $ref: '#/definitions/aggregator.IngestResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "405":
+          description: Method not allowed
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Ingest events from agents
       tags:
       - events
   /api/list-connections:
@@ -348,15 +731,15 @@ paths:
       description: Get count of packet drop events filtered by PID, command, and time
         window
       parameters:
-      - description: Process ID (GET only)
+      - description: Process ID
         in: query
         name: pid
         type: integer
-      - description: Command name (GET only)
+      - description: Command name
         in: query
         name: command
         type: string
-      - description: 'Duration in seconds (GET only, default: 60)'
+      - description: 'Duration in seconds (default: 60)'
         in: query
         name: duration_seconds
         type: integer
@@ -399,15 +782,15 @@ paths:
       description: Get count of packet drop events filtered by PID, command, and time
         window
       parameters:
-      - description: Process ID (GET only)
+      - description: Process ID
         in: query
         name: pid
         type: integer
-      - description: Command name (GET only)
+      - description: Command name
         in: query
         name: command
         type: string
-      - description: 'Duration in seconds (GET only, default: 60)'
+      - description: 'Duration in seconds (default: 60)'
         in: query
         name: duration_seconds
         type: integer
@@ -455,8 +838,7 @@ paths:
         "200":
           description: List of eBPF programs
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.ProgramsResponse'
         "500":
           description: Internal server error
           schema:
@@ -472,6 +854,26 @@ paths:
       summary: List eBPF programs
       tags:
       - programs
+  /api/stats:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve statistics about event aggregation including counts by
+        type and node
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Aggregation statistics
+          schema:
+            $ref: '#/definitions/aggregator.AggregationStatsResponse'
+        "405":
+          description: Method not allowed
+          schema:
+            type: string
+      summary: Get aggregation statistics
+      tags:
+      - stats
   /health:
     get:
       consumes:
@@ -483,8 +885,7 @@ paths:
         "200":
           description: Health status
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.HealthResponse'
         "503":
           description: Service unavailable
           schema:

@@ -10,9 +10,9 @@ import (
 
 // HealthCheck represents the aggregator health status.
 type HealthCheck struct {
-	Status    string            `json:"status"`
-	Component string            `json:"component"`
-	Uptime    string            `json:"uptime"`
+	Status    string                 `json:"status"`
+	Component string                 `json:"component"`
+	Uptime    string                 `json:"uptime"`
 	Stats     map[string]interface{} `json:"stats"`
 }
 

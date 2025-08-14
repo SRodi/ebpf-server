@@ -16,9 +16,9 @@ import (
 
 // System is the main orchestrator for the eBPF monitoring system.
 type System struct {
-	manager           core.Manager
-	storage           core.EventSink
-	aggregatorClient  *client.AggregatorClient
+	manager          core.Manager
+	storage          core.EventSink
+	aggregatorClient *client.AggregatorClient
 }
 
 // NewSystem creates a new eBPF monitoring system.
@@ -26,7 +26,7 @@ func NewSystem() *System {
 	manager := programs.NewManager()
 	memStorage := storage.NewMemoryStorage()
 	aggregatorClient := client.NewAggregatorClient()
-	
+
 	// Wrap storage with forwarding to aggregator
 	forwardingStorage := storage.NewForwardingStorage(memStorage, aggregatorClient)
 

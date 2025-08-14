@@ -29,7 +29,7 @@ func TestKubernetesMetadataIntegration(t *testing.T) {
 		os.Unsetenv("NODE_NAME")
 		os.Unsetenv("POD_NAME")
 		os.Unsetenv("POD_NAMESPACE")
-		
+
 		// Reset provider using the safe method
 		resetKubernetesProvider()
 
@@ -63,7 +63,7 @@ func TestKubernetesMetadataIntegration(t *testing.T) {
 		os.Setenv("NODE_NAME", "test-node-1")
 		os.Setenv("POD_NAME", "ebpf-monitor-abcde")
 		os.Setenv("POD_NAMESPACE", "ebpf-system")
-		
+
 		// Reset provider to pick up new env vars using the safe method
 		resetKubernetesProvider()
 

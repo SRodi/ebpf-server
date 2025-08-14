@@ -10,8 +10,8 @@ import (
 
 // ForwardingStorage wraps another storage and forwards events to an aggregator.
 type ForwardingStorage struct {
-	primary           core.EventSink
-	aggregatorClient  *client.AggregatorClient
+	primary          core.EventSink
+	aggregatorClient *client.AggregatorClient
 }
 
 // NewForwardingStorage creates a new forwarding storage.

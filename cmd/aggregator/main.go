@@ -52,6 +52,13 @@ func main() {
 	mux.HandleFunc("/api/events", agg.HandleEvents)
 	mux.HandleFunc("/api/events/ingest", agg.HandleIngest)
 	mux.HandleFunc("/api/stats", agg.HandleStats)
+	mux.HandleFunc("/api/programs", agg.HandlePrograms)
+
+	// Connection and packet drop API endpoints (aggregator-specific)
+	mux.HandleFunc("/api/list-connections", agg.HandleListConnections)
+	mux.HandleFunc("/api/list-packet-drops", agg.HandleListPacketDrops)
+	mux.HandleFunc("/api/connection-summary", agg.HandleConnectionSummary)
+	mux.HandleFunc("/api/packet-drop-summary", agg.HandlePacketDropSummary)
 
 	// Swagger documentation
 	mux.HandleFunc("/swagger/", httpSwagger.WrapHandler)
